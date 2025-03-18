@@ -175,3 +175,6 @@ cython_debug/
 
 # VnCoreNLP
 VnCoreNLP/
+
+# models
+models/
