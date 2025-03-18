@@ -145,6 +145,18 @@ wheels = [
 ]
 
 [[package]]
+name = "click"
+version = "8.1.8"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "platform_system == 'Windows'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b9/2e/0090cbf739cee7d23781ad4b89a9894a41538e4fcf4c31dcdd705b78eb8b/click-8.1.8.tar.gz", hash = "sha256:ed53c9d8990d83c2a27deae68e4ee337473f6330c040a31d4225c9574d16096a", size = 226593 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7e/d4/7ebdbd03970677812aac39c869717059dbb71a4cfc033ca6e5221787892c/click-8.1.8-py3-none-any.whl", hash = "sha256:63c132bbbed01578a06712a2d1f497bb62d9c1c0d329b7903a866228027263b2", size = 98188 },
+]
+
+[[package]]
 name = "colorama"
 version = "0.4.6"
 source = { registry = "https://pypi.org/simple" }
@@ -581,6 +593,8 @@ dependencies = [
     { name = "pyvi" },
     { name = "seaborn" },
     { name = "transformers" },
+    { name = "underthesea" },
+    { name = "vncorenlp" },
     { name = "wordcloud" },
 ]
 
@@ -596,6 +610,8 @@ requires-dist = [
     { name = "pyvi", specifier = ">=0.1.1" },
     { name = "seaborn", specifier = ">=0.13.2" },
     { name = "transformers", specifier = ">=4.49.0" },
+    { name = "underthesea", specifier = ">=6.8.4" },
+    { name = "vncorenlp", specifier = ">=1.0.3" },
     { name = "wordcloud", specifier = ">=1.9.4" },
 ]
 
@@ -759,6 +775,21 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/fd/1d/06475e1cd5264c0b870ea2cc6fdb3e37177c1e565c43f56ff17a10e3937f/networkx-3.4.2.tar.gz", hash = "sha256:307c3669428c5362aab27c8a1260aa8f47c4e91d3891f48be0141738d8d053e1", size = 2151368 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b9/54/dd730b32ea14ea797530a4479b2ed46a6fb250f682a9cfb997e968bf0261/networkx-3.4.2-py3-none-any.whl", hash = "sha256:df5d4365b724cf81b8c6a7312509d0c22386097011ad1abe274afd5e9d3bbc5f", size = 1723263 },
+]
+
+[[package]]
+name = "nltk"
+version = "3.9.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "joblib" },
+    { name = "regex" },
+    { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3c/87/db8be88ad32c2d042420b6fd9ffd4a149f9a0d7f0e86b3f543be2eeeedd2/nltk-3.9.1.tar.gz", hash = "sha256:87d127bd3de4bd89a4f81265e5fa59cb1b199b27440175370f7417d2bc7ae868", size = 2904691 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4d/66/7d9e26593edda06e8cb531874633f7c2372279c3b0f46235539fe546df8b/nltk-3.9.1-py3-none-any.whl", hash = "sha256:4fa26829c5b00715afe3061398a8989dc643b92ce7dd93fb4585a70930d168a1", size = 1505442 },
 ]
 
 [[package]]
@@ -1824,6 +1855,38 @@ wheels = [
 ]
 
 [[package]]
+name = "underthesea"
+version = "6.8.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "joblib" },
+    { name = "nltk" },
+    { name = "python-crfsuite" },
+    { name = "pyyaml" },
+    { name = "requests" },
+    { name = "scikit-learn" },
+    { name = "tqdm" },
+    { name = "underthesea-core" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f6/ce/9e596f59a66ef07f9cfb841fac6296c7090f7f8477a496d579f6790bb2af/underthesea-6.8.4.tar.gz", hash = "sha256:ed14b82c7acfc1b11e025494fe941dac572b588ae92e3bc5d9ac909f0b3954c8", size = 21434162 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/23/17/8c9b8faa546fc0b1d2c2d95bc3539422946c3614f14db91272b219307c9f/underthesea-6.8.4-py3-none-any.whl", hash = "sha256:ddc1387f99320e4a2bbee2bfd34d7cd39fad54802b6752941cbc47d8e79ee9c7", size = 20914512 },
+]
+
+[[package]]
+name = "underthesea-core"
+version = "1.0.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b3/7f/8d136185263619e25473af7584bb224918a3546975afeb375b87b3bcae20/underthesea_core-1.0.4.tar.gz", hash = "sha256:fea9ddfe7445f6bb5c018407ba37aabd46043fb754f2d36088aab8a2c542f5ae", size = 560412 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/24/28/1caf305355f7ac8e0a0c448889a6171a58fa8a2620e90627e6243e01b1e4/underthesea_core-1.0.4-cp311-cp311-macosx_10_7_x86_64.whl", hash = "sha256:1b48ee5ec32e23859ab8880bd692b75fc7e3686a438ad96dd8fe5ee7de1da06b", size = 601634 },
+    { url = "https://files.pythonhosted.org/packages/b9/8a/6e5ca86b2485e53fe64f06e0249b0c822aa1d9b5c4077dca6960ee2806ce/underthesea_core-1.0.4-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:f0e07d58d559714a0c109cdbe317e56d993c14367f107bb5f89260bb0f88f2f7", size = 574598 },
+    { url = "https://files.pythonhosted.org/packages/e1/9d/095b76972ad94fdeee12f9833f03f4bc5cbe0795f9ef3d0b8e000e450b35/underthesea_core-1.0.4-cp311-cp311-manylinux2010_x86_64.whl", hash = "sha256:a42c7638eff24b01e03c15a96011f96a32ed917d6275faf5bcee911ee8acd051", size = 657832 },
+    { url = "https://files.pythonhosted.org/packages/03/9c/d77c20ca57b9d053047b31f0c5924318552fa21c2798757b925670552ebd/underthesea_core-1.0.4-cp311-none-win_amd64.whl", hash = "sha256:744d9e4009e76bf5a955b5445a4f7e04cdd0d74976f51c3120b29327a24edc1d", size = 552991 },
+]
+
+[[package]]
 name = "urllib3"
 version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1831,6 +1894,15 @@ sdist = { url = "https://files.pythonhosted.org/packages/aa/63/e53da845320b757bf
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c8/19/4ec628951a74043532ca2cf5d97b7b14863931476d117c471e8e2b1eb39f/urllib3-2.3.0-py3-none-any.whl", hash = "sha256:1cee9ad369867bfdbbb48b7dd50374c0967a0bb7710050facf0dd6911440e3df", size = 128369 },
 ]
+
+[[package]]
+name = "vncorenlp"
+version = "1.0.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/71/c2/96a60cf75421ecc740829fa920c617b3dd7fa6791e17554e7c6f3e7d7fca/vncorenlp-1.0.3.tar.gz", hash = "sha256:c307c7ff108d2a74436d877246f237300ce465b52d7556c00e3d47d01bff1f1d", size = 2648781 }
 
 [[package]]
 name = "wcwidth"
