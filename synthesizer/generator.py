@@ -1,6 +1,6 @@
 import time
 import instructor
-from instructor import Instructor, AsyncInstructor
+from instructor import AsyncInstructor
 from google import genai
 from openai import OpenAI
 from .models import SentimentPrompt, UserReviews
@@ -124,7 +124,7 @@ class DataGenerator:
                     num_examples=num_examples, sentiment=sentiment
                 )
                 logger.info(f"Generating reviews for batch {len(batched_records) + 1}")
-                generated_samples = self.generate_reviews(
+                generated_samples: UserReviews = self.generate_reviews(
                     examples, prompt, model, batch_size
                 )
                 logger.info(f"Generated reviews: {generated_samples}")
@@ -138,17 +138,22 @@ class DataGenerator:
                     continue
                 logger.error(f"Error generating reviews: {e}")
                 continue
-            # Test
-            break
         return batched_records
 
     def save_reviews(self, batched_records: list[UserReviews], path: str):
-        batched_df = []
-        for rec in batched_records:
-            _df = pd.DataFrame(rec.model_dump())
-            batched_df.append(_df)
-        batched_df = pd.concat(batched_df)
-        batched_df.to_csv(path, index=False)
+        """Save reviews to CSV in the proper format with Review and Sentiment columns."""
+        all_reviews = []
+        all_sentiments = []
+
+        for record in batched_records:
+            record_dict = record.model_dump()
+            for review in record_dict["reviews"]:
+                all_reviews.append(review["review"])
+                all_sentiments.append(review["sentiment"])
+
+        df = pd.DataFrame({"Review": all_reviews, "Sentiment": all_sentiments})
+        df.to_csv(path, index=False)
+        logger.info(f"Saved {len(df)} reviews to {path}")
 
 
 if __name__ == "__main__":
