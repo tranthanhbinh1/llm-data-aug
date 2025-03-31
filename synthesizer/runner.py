@@ -66,6 +66,7 @@ class AugGptRunner:
     ) -> list[AugmentedUserReviews]:
         # With each original sentence, we call the LLM to generate a number of augmented sentences
         original_sentences = self.prepare_original_sentences(sentiment)
+        failed_original_sentences = []
         batched_records: list[AugmentedUserReviews] = []
         _hit_count = 0
         for original_sentence in original_sentences:
@@ -83,12 +84,19 @@ class AugGptRunner:
                 _hit_count += DataGenerator.MAX_RETRIES
                 logger.info(f"Hit count (including retries): {_hit_count}")
             except Exception as e:
+                failed_original_sentences.append(original_sentence)
+                # Save the failed original sentence
                 if "429" in str(e):
                     logger.error("Rate limit reached, sleeping for 60 seconds")
                     time.sleep(60)
                     continue
                 logger.error(f"Error generating reviews: {e}")
                 continue
+        # Save the failed original sentences
+        pd.DataFrame(failed_original_sentences).to_csv(
+            f"data/llm_generated/auggpt_failed_original_sentences_{sentiment}.csv",
+            index=False,
+        )
         return batched_records
 
 
