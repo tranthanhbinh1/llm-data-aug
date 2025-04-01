@@ -73,6 +73,11 @@ class AugGptRunner:
         # Batching the amount of original sentences to generate
 
         for original_sentence in original_sentences:
+            if index and original_sentences.index(original_sentence) < index:
+                logger.info(
+                    f"Skipping sentence {original_sentences.index(original_sentence)} because continue from {index}"
+                )
+                continue
             try:
                 logger.info(f"Generating reviews for sentence: {original_sentence}")
                 logger.info(
@@ -143,4 +148,5 @@ if __name__ == "__main__":
         user_prompt=SentimentPrompt.AUG_GPT_PROMPT,
         num_to_generate=args.num_to_generate,
         model=args.model,
+        index=args.continue_from,
     )
