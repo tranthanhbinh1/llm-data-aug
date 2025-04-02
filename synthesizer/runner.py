@@ -16,8 +16,9 @@ import time
 class AugGptRunner:
     """https://arxiv.org/abs/2302.13007"""
 
-    BASE_AUGMENTOR_PROMPT = (
-        "You are a helpful assistant that rephrase text and make sentence smooth."
+    BASE_AUGMENTOR_PROMPT = ChatCompletionSystemMessageParam(
+        role="system",
+        content="Bạn là một trợ lý hữu ích, có nhiệm vụ diễn đạt lại văn bản và làm cho câu văn trở nên mượt mà hơn.",
     )
 
     def __init__(self, instructor: AsyncInstructor):
@@ -88,7 +89,7 @@ class AugGptRunner:
                     user_prompt,
                     model,
                     num_to_generate,
-                    system_prompt,
+                    self.BASE_AUGMENTOR_PROMPT,
                 )
                 logger.info(f"Generated reviews: {generated_samples}")
                 batched_records.append(generated_samples)
@@ -104,7 +105,7 @@ class AugGptRunner:
                 logger.error(f"Error generating reviews: {e}")
                 continue
             # Save in each 50 sentences
-            if original_sentences.index(original_sentence) % 10 == 0:
+            if original_sentences.index(original_sentence) % 20 == 0:
                 self.data_generator.save_reviews(
                     batched_records,
                     f"data/llm_generated/auggpt_augmented_user_reviews_{sentiment}_{original_sentences.index(original_sentence)}.csv",
