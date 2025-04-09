@@ -148,7 +148,7 @@ if __name__ == "__main__":
         instance = instructor.from_openai(
             OpenAI(
                 base_url="http://localhost:11434/v1",
-                api_key="ollama",  # required, but unused
+                api_key="ollama",
             ),
             mode=instructor.Mode.JSON,
         )
