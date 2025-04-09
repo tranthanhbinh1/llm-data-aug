@@ -8,9 +8,12 @@ from openai.types.chat.chat_completion_message_param import (
     ChatCompletionSystemMessageParam,
     ChatCompletionUserMessageParam,
 )
+from google import genai
 import pandas as pd
 from loguru import logger
 import time
+import os
+from dotenv import load_dotenv
 
 
 class AugGptRunner:
@@ -108,7 +111,7 @@ class AugGptRunner:
             if original_sentences.index(original_sentence) % 20 == 0:
                 self.data_generator.save_reviews(
                     batched_records,
-                    f"data/llm_generated/auggpt_augmented_user_reviews_{sentiment}_{original_sentences.index(original_sentence)}.csv",
+                    f"data/llm_generated/{model}/auggpt_augmented_user_reviews_{sentiment}_{original_sentences.index(original_sentence)}.csv",
                 )
                 logger.info(
                     f"Saved {original_sentences.index(original_sentence)} sentences"
@@ -117,7 +120,7 @@ class AugGptRunner:
 
                 # Save the failed original sentences
                 pd.DataFrame(failed_original_sentences).to_csv(
-                    f"data/llm_generated/auggpt_failed_original_sentences_{sentiment}.csv",
+                    f"data/llm_generated/{model}/auggpt_failed_original_sentences_{sentiment}.csv",
                     index=False,
                 )
                 failed_original_sentences = []
@@ -128,6 +131,8 @@ class AugGptRunner:
 if __name__ == "__main__":
     import argparse
 
+    load_dotenv()
+
     parser = argparse.ArgumentParser()
     # Continue from a specific index
     parser.add_argument("--continue_from", type=int, default=0)
@@ -135,14 +140,19 @@ if __name__ == "__main__":
     parser.add_argument("--num_to_generate", type=int, default=6)
     parser.add_argument("--model", type=str, default="gemini-2.0-flash")
     args = parser.parse_args()
+    if args.model == "gemini-2.0-flash":
+        instance = instructor.from_genai(
+            genai.Client(api_key=os.getenv("GOOGLE_AI_API_KEY"))
+        )
+    else:
+        instance = instructor.from_openai(
+            OpenAI(
+                base_url="http://localhost:11434/v1",
+                api_key="ollama",  # required, but unused
+            ),
+            mode=instructor.Mode.JSON,
+        )
 
-    instance = instructor.from_openai(
-        OpenAI(
-            base_url="http://localhost:11434/v1",
-            api_key="ollama",  # required, but unused
-        ),
-        mode=instructor.Mode.JSON,
-    )
     runner = AugGptRunner(instance)
     augmented_reviews = runner.generate_reviews_batch(
         sentiment=args.sentiment,

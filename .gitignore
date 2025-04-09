@@ -178,3 +178,5 @@ VnCoreNLP/
 
 # models
 models/
+
+test.py

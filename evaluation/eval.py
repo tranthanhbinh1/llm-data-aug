@@ -1,28 +1,13 @@
 import os
-from regex import P
 import torch
 import pandas as pd
 import numpy as np
-from underthesea import sent_tokenize, word_tokenize, text_normalize
-import emoji
-from vncorenlp import VnCoreNLP
-import collections
-import emoji_vietnamese as ev
-from transformers import AutoModel, AutoTokenizer, AutoModelForSequenceClassification
-from sklearn.model_selection import train_test_split
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from sklearn.metrics import accuracy_score
-from torch.utils.data import DataLoader, Dataset
-from transformers import AdamW
-from tqdm import tqdm
+from torch.utils.data import DataLoader
 from sklearn.metrics import classification_report
-from sklearn.metrics import confusion_matrix
-import matplotlib.pyplot as plt
-import seaborn as sns
-from sklearn.svm import SVC
-import re
 from dataloaders.train_test_split import DataScenario
 from dataloaders.custom_dataset import CustomDataset
-from utils import save_classification_report
 from loguru import logger
 from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFast

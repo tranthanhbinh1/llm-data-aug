@@ -11,8 +11,9 @@ from .models import AugmentedUserReviews, SentimentPrompt, UserReviews
 from dotenv import load_dotenv
 import os
 import pandas as pd
-from typing import Literal, Union, cast
+from typing import Literal, Union
 from loguru import logger
+from google import genai
 
 load_dotenv()
 
@@ -29,7 +30,11 @@ class DataGenerator:
                 """,
     )
 
-    def __init__(self, instructor: AsyncInstructor, response_model: type[BaseModel]):
+    def __init__(
+        self,
+        instructor: AsyncInstructor,
+        response_model: type[BaseModel],
+    ):
         self.instructor = instructor
         self.response_model = response_model
 
