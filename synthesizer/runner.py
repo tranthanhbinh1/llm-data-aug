@@ -2,8 +2,8 @@ from typing import Literal, Optional
 import instructor
 from openai import OpenAI
 from .generator import DataGenerator
-from .models import AugmentedUserReviews, SentimentPrompt
-from instructor import AsyncInstructor
+from .models import AugmentedUserReviews, SentimentPrompt, UserReviews
+from instructor import Instructor
 from openai.types.chat.chat_completion_message_param import (
     ChatCompletionSystemMessageParam,
     ChatCompletionUserMessageParam,
@@ -24,7 +24,7 @@ class AugGptRunner:
         content="Bạn là một trợ lý hữu ích, có nhiệm vụ diễn đạt lại văn bản và làm cho câu văn trở nên mượt mà hơn.",
     )
 
-    def __init__(self, instructor: AsyncInstructor):
+    def __init__(self, instructor: Instructor):
         self.instructor = instructor
         self.response_model = AugmentedUserReviews
         self.data_generator = DataGenerator(instructor, self.response_model)
@@ -66,13 +66,13 @@ class AugGptRunner:
         user_prompt: SentimentPrompt,
         model: str = "gemini-2.0-flash",
         num_to_generate: int = 6,
-        system_prompt: ChatCompletionSystemMessageParam = DataGenerator.BASE_SYSTEM_PROMPT,
+        _: ChatCompletionSystemMessageParam = DataGenerator.BASE_SYSTEM_PROMPT,
         index: Optional[int] = 0,
-    ) -> list[AugmentedUserReviews]:
+    ) -> list[AugmentedUserReviews | UserReviews]:
         # With each original sentence, we call the LLM to generate a number of augmented sentences
         original_sentences = self.prepare_original_sentences(sentiment)
         failed_original_sentences = []
-        batched_records: list[AugmentedUserReviews] = []
+        batched_records: list[AugmentedUserReviews | UserReviews] = []
         _hit_count = 0
         # Batching the amount of original sentences to generate
 

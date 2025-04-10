@@ -1,6 +1,6 @@
 import time
 import instructor
-from instructor import AsyncInstructor
+from instructor import Instructor
 from openai.types.chat.chat_completion_message_param import (
     ChatCompletionSystemMessageParam,
     ChatCompletionUserMessageParam,
@@ -11,9 +11,8 @@ from .models import AugmentedUserReviews, SentimentPrompt, UserReviews
 from dotenv import load_dotenv
 import os
 import pandas as pd
-from typing import Literal, Union
+from typing import Literal, cast
 from loguru import logger
-from google import genai
 
 load_dotenv()
 
@@ -32,7 +31,7 @@ class DataGenerator:
 
     def __init__(
         self,
-        instructor: AsyncInstructor,
+        instructor: Instructor,
         response_model: type[BaseModel],
     ):
         self.instructor = instructor
@@ -91,7 +90,7 @@ class DataGenerator:
         model: str = "gemini-2.0-flash",
         batch_size: int = 15,
         system_prompt: ChatCompletionSystemMessageParam = BASE_SYSTEM_PROMPT,
-    ) -> BaseModel:
+    ) -> AugmentedUserReviews | UserReviews:
         resp = self.instructor.messages.create(
             messages=[
                 system_prompt,
@@ -106,7 +105,7 @@ class DataGenerator:
             response_model=self.response_model,
         )
 
-        return resp
+        return cast(AugmentedUserReviews | UserReviews, resp)
 
     def generate_reviews_batch(
         self,
@@ -117,11 +116,11 @@ class DataGenerator:
         num_examples: int = 5,
         batch_size: int = 15,
         system_prompt: ChatCompletionSystemMessageParam = BASE_SYSTEM_PROMPT,
-    ) -> list[UserReviews]:
+    ) -> list[AugmentedUserReviews | UserReviews]:
         target_batches = self.get_target_number(sentiment) // batch_size
         logger.info(f"Target batches: {target_batches}")
 
-        batched_records: list[UserReviews] = []
+        batched_records: list[AugmentedUserReviews | UserReviews] = []
         _hit_count = 0
         while len(batched_records) < target_batches:
             try:
@@ -129,8 +128,10 @@ class DataGenerator:
                     num_examples=num_examples, sentiment=sentiment
                 )
                 logger.info(f"Generating reviews for batch {len(batched_records) + 1}")
-                generated_samples: UserReviews = self.generate_reviews(
-                    examples, prompt, model, batch_size, system_prompt
+                generated_samples: AugmentedUserReviews | UserReviews = (
+                    self.generate_reviews(
+                        examples, prompt, model, batch_size, system_prompt
+                    )
                 )
                 logger.info(f"Generated reviews: {generated_samples}")
                 batched_records.append(generated_samples)
@@ -146,7 +147,9 @@ class DataGenerator:
         return batched_records
 
     def save_reviews(
-        self, batched_records: list[Union[UserReviews, AugmentedUserReviews]], path: str
+        self,
+        batched_records: list[AugmentedUserReviews | UserReviews],
+        path: str,
     ):
         """Save reviews to CSV in the proper format with Review and Sentiment columns."""
         all_reviews = []
@@ -177,27 +180,26 @@ if __name__ == "__main__":
     parser.add_argument("--model", type=str, default="gemini-2.0-flash")
     args = parser.parse_args()
 
-    # client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-    # instance = instructor.from_genai(client, mode=instructor.Mode.GENAI_TOOLS)
-
     instance = instructor.from_openai(
         OpenAI(
             base_url="http://localhost:11434/v1",
-            api_key="ollama",  # required, but unused
+            api_key="local",
         ),
         mode=instructor.Mode.JSON,
     )
 
-    generator = DataGenerator(instance)
+    generator = DataGenerator(instance, UserReviews)
     examples: list[ChatCompletionUserMessageParam] = generator.generate_examples(
         num_examples=5, sentiment=args.sentiment
     )
-    reviews: list[UserReviews] = generator.generate_reviews_batch(
-        examples=examples,
-        sentiment=args.sentiment,
-        num_examples=args.num_examples,
-        prompt=sentiment_prompt_mapping[args.sentiment],
-        model=args.model,
+    reviews: list[AugmentedUserReviews | UserReviews] = (
+        generator.generate_reviews_batch(
+            examples=examples,
+            sentiment=args.sentiment,
+            num_examples=args.num_examples,
+            prompt=sentiment_prompt_mapping[args.sentiment],
+            model=args.model,
+        )
     )
     generator.save_reviews(
         reviews, f"data/llm_generated/{args.sentiment}_user_reviews.csv"
