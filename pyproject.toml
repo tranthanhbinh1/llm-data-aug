@@ -26,4 +26,6 @@ dependencies = [
     "instructor>=1.7.8",
     "python-dotenv>=1.1.0",
     "loguru>=0.7.3",
+    "imbalanced-learn>=0.13.0",
+    "dvc>=3.59.1",
 ]

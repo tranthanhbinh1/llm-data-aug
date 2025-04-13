@@ -9,8 +9,6 @@ def save_classification_report(
 ):
     # Save the classification report
     report = classification_report(true_labels, predictions, target_names=target_names)
-    print(type(report))
-    print(report)
     classification_report_df = pd.DataFrame(report).transpose()
     classification_report_df.to_csv(
         os.path.join(
