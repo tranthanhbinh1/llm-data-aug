@@ -33,7 +33,7 @@ class AugGptRunner:
     def prepare_original_sentences(
         cls,
         sentiment: Literal["neutral", "negative"],  # The minority classes
-    ) -> list[ChatCompletionUserMessageParam]:
+    ) -> tuple[list[str], list[ChatCompletionUserMessageParam]]:
         """Get examples from the original dataset for each LLM call"""
         label_mapping = {"Positive": 1, "Neutral": 2, "Negative": 0}
 
@@ -50,7 +50,8 @@ class AugGptRunner:
         logger.info(minority_data)
 
         # List of original sentences
-        original_sentences = [
+        original_sentences = [sentence["Review"] for sentence in minority_data]
+        original_sentence_prompts = [
             ChatCompletionUserMessageParam(
                 role="user",
                 content=f"Review: {sentence['Review']}. Sentiment: {sentence['Sentiment']}",
@@ -58,7 +59,7 @@ class AugGptRunner:
             for sentence in minority_data
         ]
 
-        return original_sentences
+        return original_sentences, original_sentence_prompts
 
     def generate_reviews_batch(
         self,
@@ -70,13 +71,17 @@ class AugGptRunner:
         index: Optional[int] = 0,
     ) -> list[AugmentedUserReviews | UserReviews]:
         # With each original sentence, we call the LLM to generate a number of augmented sentences
-        original_sentences = self.prepare_original_sentences(sentiment)
+        original_sentences, original_sentence_prompts = self.prepare_original_sentences(
+            sentiment
+        )
         failed_original_sentences = []
         batched_records: list[AugmentedUserReviews | UserReviews] = []
         _hit_count = 0
-        # Batching the amount of original sentences to generate
 
-        for original_sentence in original_sentences:
+        # Generate 6 rephrased sentences for each original sentence
+        for original_sentence, original_sentence_prompt in zip(
+            original_sentences, original_sentence_prompts
+        ):
             if index and original_sentences.index(original_sentence) < index:
                 logger.info(
                     f"Skipping sentence {original_sentences.index(original_sentence)} because continue from {index}"
@@ -87,12 +92,14 @@ class AugGptRunner:
                 logger.info(
                     f"Sentence number: {original_sentences.index(original_sentence)}"
                 )
-                generated_samples = self.data_generator.generate_reviews(
-                    [original_sentence],
-                    user_prompt,
-                    model,
-                    num_to_generate,
-                    self.BASE_AUGMENTOR_PROMPT,
+                generated_samples: AugmentedUserReviews | UserReviews = (
+                    self.data_generator.generate_reviews(
+                        [original_sentence_prompt],
+                        user_prompt,
+                        model,
+                        num_to_generate,
+                        self.BASE_AUGMENTOR_PROMPT,
+                    )
                 )
                 logger.info(f"Generated reviews: {generated_samples}")
                 batched_records.append(generated_samples)
@@ -107,23 +114,21 @@ class AugGptRunner:
                     continue
                 logger.error(f"Error generating reviews: {e}")
                 continue
-            # Save in each 50 sentences
-            if original_sentences.index(original_sentence) % 20 == 0:
-                self.data_generator.save_reviews(
-                    batched_records,
-                    f"data/llm_generated/{model}/auggpt_augmented_user_reviews_{sentiment}_{original_sentences.index(original_sentence)}.csv",
-                )
-                logger.info(
-                    f"Saved {original_sentences.index(original_sentence)} sentences"
-                )
-                batched_records = []
 
-                # Save the failed original sentences
-                pd.DataFrame(failed_original_sentences).to_csv(
-                    f"data/llm_generated/{model}/auggpt_failed_original_sentences_{sentiment}.csv",
-                    index=False,
-                )
-                failed_original_sentences = []
+        # Final save
+        self.data_generator.save_reviews(
+            batched_records,
+            original_sentences[index:],
+            f"data/llm_generated/{model}/auggpt_augmented_user_reviews_{sentiment}.csv",
+        )
+        logger.info(f"Saved {len(batched_records)} sentences")
+        logger.info(pd.DataFrame(batched_records).head().to_markdown())
+
+        # Save the failed original sentences
+        pd.DataFrame(failed_original_sentences).to_csv(
+            f"data/llm_generated/{model}/auggpt_failed_original_sentences_{sentiment}.csv",
+            index=False,
+        )
 
         return batched_records
 

@@ -18,6 +18,8 @@ load_dotenv()
 
 
 class DataGenerator:
+    """Generate synthetic data from the original dataset using LLM without any specific strategy"""
+
     SENTIMENT_MAPPING = {"positive": 1, "neutral": 2, "negative": 0}
     PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     DATA_PATH = os.path.join(PROJECT_ROOT, "data")
@@ -149,19 +151,31 @@ class DataGenerator:
     def save_reviews(
         self,
         batched_records: list[AugmentedUserReviews | UserReviews],
+        original_sentences: list[str],
         path: str,
     ):
         """Save reviews to CSV in the proper format with Review and Sentiment columns."""
         all_reviews = []
         all_sentiments = []
+        all_original_reviews = []
 
-        for record in batched_records:
+        for record, original_sentence in zip(batched_records, original_sentences):
             record_dict = record.model_dump()
             for review in record_dict["reviews"]:
                 all_reviews.append(review["review"])
                 all_sentiments.append(review["sentiment"])
 
-        df = pd.DataFrame({"Review": all_reviews, "Sentiment": all_sentiments})
+            # Because each sentence create 6 new reviews, we need to repeat the original sentence 6 times
+            for _ in range(6):
+                all_original_reviews.append(original_sentence)
+
+        df = pd.DataFrame(
+            {
+                "Review": all_reviews,
+                "Sentiment": all_sentiments,
+                "OriginalReview": all_original_reviews,
+            }
+        )
         df.to_csv(path, index=False)
         logger.info(f"Saved {len(df)} reviews to {path}")
 

@@ -28,4 +28,6 @@ dependencies = [
     "loguru>=0.7.3",
     "imbalanced-learn>=0.13.0",
     "dvc>=3.59.1",
+    "lightning>=2.5.1",
+    "torchmetrics>=1.7.1",
 ]
