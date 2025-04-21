@@ -33,11 +33,11 @@ class AugGptRunner:
     def prepare_original_sentences(
         cls,
         sentiment: Literal["neutral", "negative"],  # The minority classes
+        data: pd.DataFrame = pd.read_csv("data/cleaned_user_reviews.csv"),
     ) -> tuple[list[str], list[ChatCompletionUserMessageParam]]:
         """Get examples from the original dataset for each LLM call"""
         label_mapping = {"Positive": 1, "Neutral": 2, "Negative": 0}
 
-        data = pd.read_csv("data/cleaned_user_reviews.csv")
         data["Sentiment"] = data["Sentiment"].map(label_mapping)
 
         # Data of the minority classes
@@ -61,7 +61,7 @@ class AugGptRunner:
 
         return original_sentences, original_sentence_prompts
 
-    def generate_reviews_batch(
+    def _generate_reviews(
         self,
         sentiment: Literal["neutral", "negative"],
         user_prompt: SentimentPrompt,
@@ -69,10 +69,9 @@ class AugGptRunner:
         num_to_generate: int = 6,
         _: ChatCompletionSystemMessageParam = DataGenerator.BASE_SYSTEM_PROMPT,
         index: Optional[int] = 0,
-    ) -> list[AugmentedUserReviews | UserReviews]:
-        # With each original sentence, we call the LLM to generate a number of augmented sentences
+    ) -> tuple[list[AugmentedUserReviews | UserReviews], list[str], list[str]]:
         original_sentences, original_sentence_prompts = self.prepare_original_sentences(
-            sentiment
+            sentiment=sentiment
         )
         failed_original_sentences = []
         batched_records: list[AugmentedUserReviews | UserReviews] = []
@@ -107,7 +106,6 @@ class AugGptRunner:
                 logger.info(f"Hit count (including retries): {_hit_count}")
             except Exception as e:
                 failed_original_sentences.append(original_sentence)
-                # Save the failed original sentence
                 if "429" in str(e):
                     logger.error("Rate limit reached, sleeping for 60 seconds")
                     time.sleep(60)
@@ -115,19 +113,55 @@ class AugGptRunner:
                 logger.error(f"Error generating reviews: {e}")
                 continue
 
-        # Final save
+        return batched_records, original_sentences[index:], failed_original_sentences
+
+    def save_generated_reviews(
+        self,
+        batched_records: list[AugmentedUserReviews | UserReviews],
+        original_sentences: list[str],
+        failed_sentences: list[str],
+        model: str,
+        sentiment: str,
+    ) -> None:
+        # Save the successful generations
         self.data_generator.save_reviews(
             batched_records,
-            original_sentences[index:],
+            original_sentences,
             f"data/llm_generated/{model}/auggpt_augmented_user_reviews_{sentiment}.csv",
         )
         logger.info(f"Saved {len(batched_records)} sentences")
         logger.info(pd.DataFrame(batched_records).head().to_markdown())
 
         # Save the failed original sentences
-        pd.DataFrame(failed_original_sentences).to_csv(
+        pd.DataFrame(failed_sentences).to_csv(
             f"data/llm_generated/{model}/auggpt_failed_original_sentences_{sentiment}.csv",
             index=False,
+        )
+
+    def generate_reviews_batch(
+        self,
+        sentiment: Literal["neutral", "negative"],
+        user_prompt: SentimentPrompt,
+        model: str = "gemini-2.0-flash",
+        num_to_generate: int = 6,
+        _: ChatCompletionSystemMessageParam = DataGenerator.BASE_SYSTEM_PROMPT,
+        index: Optional[int] = 0,
+    ) -> list[AugmentedUserReviews | UserReviews]:
+        batched_records, original_sentences, failed_sentences = self._generate_reviews(
+            sentiment=sentiment,
+            user_prompt=user_prompt,
+            model=model,
+            num_to_generate=num_to_generate,
+            _=_,
+            index=index,
+        )
+
+        self.save_generated_reviews(
+            batched_records,
+            original_sentences,
+            failed_sentences,
+            model,
+            sentiment,
         )
 
         return batched_records
