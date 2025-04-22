@@ -9,7 +9,7 @@
 ## 7. Report the average similarity score
 
 
-from typing import Literal
+from typing import Literal, cast
 import pandas as pd
 import torch
 from loguru import logger
@@ -19,6 +19,7 @@ from constants import NUM_REPHRASED_SENTENCES
 from synthesizer.generator import DataGenerator
 from synthesizer.models import (
     AugmentedUserReview,
+    AugmentedUserReviews,
     SentimentPrompt,
     UserReview,
 )
@@ -54,7 +55,7 @@ class PromptEvaluator:
 
     def generate_synthetic_data(
         self, sentiment: Literal["neutral", "negative"]
-    ) -> tuple[list[str], list[str]]:
+    ) -> dict[str, list[str]]:
         subset = self.random_split(sentiment=sentiment)
         if subset.empty:
             raise ValueError(f"No {sentiment} records found in the dataset")
@@ -69,7 +70,7 @@ class PromptEvaluator:
         if not _original_sentences:
             raise ValueError("No sentences were prepared for generation")
 
-        synthesized_sentences, original_sentences, failed_sentences = (
+        synthesized_records, original_sentences, failed_sentences = (
             self._auggpt_runner._generate_reviews(
                 sentiment=sentiment,
                 user_prompt=SentimentPrompt.AUG_GPT_PROMPT,
@@ -82,66 +83,97 @@ class PromptEvaluator:
         if failed_sentences:
             logger.warning(f"Failed to generate for {len(failed_sentences)} sentences")
 
-        _synthesized_records: list[list[AugmentedUserReview] | list[UserReview]] = [
-            record.reviews for record in synthesized_sentences
-        ]
+        # Create a mapping between an original sentence and its corresponding records
+        _original_sentence_to_records: dict[str, AugmentedUserReviews] = dict()
+        for original_sentence, synthesized_record in zip(
+            original_sentences, synthesized_records
+        ):
+            _original_sentence_to_records[original_sentence] = cast(
+                AugmentedUserReviews, synthesized_record
+            )
 
-        synthesized_records: list[str] = [
-            review.review
-            for review in [
-                review for reviews in _synthesized_records for review in reviews
-            ]
-        ]
+        # For each AugmentedUserReviews object in the dict, we extract the reviews
+        original_sentence_to_synthesized_reviews: dict[str, list[str]] = {
+            original_sentence: [review.review for review in augmented_reviews.reviews]
+            for original_sentence, augmented_reviews in _original_sentence_to_records.items()
+        }
 
         logger.info(f"Generated {len(synthesized_records)} synthetic reviews")
-        return original_sentences, synthesized_records
+        return original_sentence_to_synthesized_reviews
+
+    def create_emebeddings(self, sentence_to_synthesized_reviews: dict[str, list[str]]):
+        sentence_to_synthesized_reviews_embeddings: dict[str, torch.Tensor] = dict()
+        for sentence, reviews in sentence_to_synthesized_reviews.items():
+            embeddings = self.model.encode(reviews)
+            sentence_to_synthesized_reviews_embeddings[sentence] = torch.tensor(
+                embeddings
+            )
+
+        sentence_to_embeddings: dict[str, torch.Tensor] = dict()
+        for sentence, _ in sentence_to_synthesized_reviews_embeddings.items():
+            embeddings = self.model.encode(sentence)
+            sentence_to_embeddings[sentence] = torch.tensor(embeddings)
+
+        return sentence_to_synthesized_reviews_embeddings, sentence_to_embeddings
 
     def evaluate(
-        self, original_records: list[str], synthesized_records: list[str]
+        self,
+        sentence_to_synthesized_reviews_embeddings: dict[str, torch.Tensor],
+        sentence_to_embeddings: dict[str, torch.Tensor],
     ) -> float:
-        if not original_records or not synthesized_records:
-            raise ValueError("Cannot evaluate empty records")
+        cosine_similarity_scores: list[float] = []
+        for sentence, original_embedding in sentence_to_embeddings.items():
+            # Get synthetic reviews embeddings for this sentence
+            synthetic_embeddings = sentence_to_synthesized_reviews_embeddings[sentence]
 
-        logger.info(
-            f"Evaluating {len(original_records)} original records against {len(synthesized_records)} synthetic records"
-        )
+            # Calculate similarity between original sentence and each synthetic version
+            similarities = torch.nn.functional.cosine_similarity(
+                synthetic_embeddings,  # Shape: [num_synthetic, embedding_dim]
+                original_embedding,  # Shape: [embedding_dim]
+                dim=1,  # Compare along embedding dimension
+            )
 
-        # Get embeddings
-        original_records_embeddings = self.model.encode(original_records)
-        synthesized_records_embeddings = self.model.encode(synthesized_records)
+            # Calculate statistics for this sentence
+            mean_similarity = similarities.mean().item()
+            cosine_similarity_scores.append(mean_similarity)
 
-        # Convert to tensors
-        original_records_tensor = torch.tensor(original_records_embeddings)
-        synthesized_records_tensor = torch.tensor(synthesized_records_embeddings)
+            # Log detailed statistics for this sentence
+            logger.info(f"\nSimilarity stats for sentence: {sentence[:50]}...")
+            logger.info(f"  Mean: {mean_similarity:.4f}")
+            logger.info(f"  Min: {similarities.min().item():.4f}")
+            logger.info(f"  Max: {similarities.max().item():.4f}")
+            logger.info(f"  Std: {similarities.std().item():.4f}")
 
-        # Reshape tensors for pairwise comparison
-        original_expanded = original_records_tensor.unsqueeze(1)  # [n, 1, d]
-        synthetic_expanded = synthesized_records_tensor.unsqueeze(0)  # [1, m, d]
+        # Calculate overall mean
+        overall_mean = sum(cosine_similarity_scores) / len(cosine_similarity_scores)
+        logger.info(f"\nOverall average similarity score: {overall_mean:.4f}")
 
-        # Calculate pairwise similarities
-        similarities = torch.nn.functional.cosine_similarity(
-            original_expanded, synthetic_expanded, dim=2
-        )  # [n, m]
-
-        # Calculate mean similarity
-        mean_similarity = similarities.mean().item()
-        logger.info(f"Average similarity score: {mean_similarity:.4f}")
-
-        return mean_similarity
+        return overall_mean
 
 
 if __name__ == "__main__":
     from google import genai
     import instructor
     import os
+    from dotenv import load_dotenv
+
+    load_dotenv()
 
     instance = instructor.from_genai(
         genai.Client(api_key=os.getenv("GOOGLE_AI_API_KEY"))
     )
     evaluator = PromptEvaluator(AugGptRunner(instance))
 
-    original_sentences, synthesized_records = evaluator.generate_synthetic_data(
+    sentence_to_synthesized_reviews = evaluator.generate_synthetic_data(
         sentiment="neutral"
     )
 
-    evaluator.evaluate(original_sentences, synthesized_records)
+    sentence_to_synthesized_reviews_embeddings, sentence_to_embeddings = (
+        evaluator.create_emebeddings(sentence_to_synthesized_reviews)
+    )
+
+    average_cosine_similarity = evaluator.evaluate(
+        sentence_to_synthesized_reviews_embeddings, sentence_to_embeddings
+    )
+
+    logger.info(f"Average cosine similarity: {average_cosine_similarity}")
