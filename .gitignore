@@ -184,4 +184,4 @@ models/
 
 test.py
 
-cursor/
+.cursor/

@@ -1,6 +1,8 @@
 from typing import Literal, Optional
 import instructor
 from openai import OpenAI
+
+from constants import NUM_REPHRASED_SENTENCES
 from .generator import DataGenerator
 from .models import AugmentedUserReviews, SentimentPrompt, UserReviews
 from instructor import Instructor
@@ -38,16 +40,29 @@ class AugGptRunner:
         """Get examples from the original dataset for each LLM call"""
         label_mapping = {"Positive": 1, "Neutral": 2, "Negative": 0}
 
-        data["Sentiment"] = data["Sentiment"].map(label_mapping)
+        # Make a copy to avoid modifying the input
+        data = data.copy()
+
+        # Check if Sentiment is already mapped
+        if data["Sentiment"].dtype == "object":
+            logger.info("Mapping sentiment labels to numeric values")
+            data["Sentiment"] = data["Sentiment"].map(label_mapping)
+
+        target_sentiment = DataGenerator.SENTIMENT_MAPPING[sentiment]
+        logger.info(f"Filtering for sentiment {sentiment} (value: {target_sentiment})")
+        logger.info(f"Input data shape: {data.shape}")
+        logger.info(f"Sentiment value counts:\n{data['Sentiment'].value_counts()}")
 
         # Data of the minority classes
-        minority_data = (
-            data[["Review", "Sentiment"]]
-            .query(f"Sentiment == {DataGenerator.SENTIMENT_MAPPING[sentiment]}")
-            .to_dict(orient="records")
-        )
+        minority_data = data[data["Sentiment"] == target_sentiment][
+            ["Review", "Sentiment"]
+        ].to_dict(orient="records")
 
-        logger.info(minority_data)
+        logger.info(f"Found {len(minority_data)} records for sentiment {sentiment}")
+
+        if not minority_data:
+            logger.warning(f"No records found for sentiment {sentiment}")
+            return [], []
 
         # List of original sentences
         original_sentences = [sentence["Review"] for sentence in minority_data]
@@ -69,15 +84,25 @@ class AugGptRunner:
         num_to_generate: int = 6,
         _: ChatCompletionSystemMessageParam = DataGenerator.BASE_SYSTEM_PROMPT,
         index: Optional[int] = 0,
+        original_sentences: Optional[list[str]] = None,
+        original_sentence_prompts: Optional[
+            list[ChatCompletionUserMessageParam]
+        ] = None,
     ) -> tuple[list[AugmentedUserReviews | UserReviews], list[str], list[str]]:
-        original_sentences, original_sentence_prompts = self.prepare_original_sentences(
-            sentiment=sentiment
-        )
+        if original_sentences is None or original_sentence_prompts is None:
+            original_sentences, original_sentence_prompts = (
+                self.prepare_original_sentences(sentiment=sentiment)
+            )
+
+        if not original_sentences or not original_sentence_prompts:
+            logger.warning("No sentences to process")
+            return [], [], []
+
         failed_original_sentences = []
         batched_records: list[AugmentedUserReviews | UserReviews] = []
         _hit_count = 0
 
-        # Generate 6 rephrased sentences for each original sentence
+        # Generate rephrased sentences for each original sentence
         for original_sentence, original_sentence_prompt in zip(
             original_sentences, original_sentence_prompts
         ):
@@ -143,7 +168,7 @@ class AugGptRunner:
         sentiment: Literal["neutral", "negative"],
         user_prompt: SentimentPrompt,
         model: str = "gemini-2.0-flash",
-        num_to_generate: int = 6,
+        num_to_generate: int = NUM_REPHRASED_SENTENCES,
         _: ChatCompletionSystemMessageParam = DataGenerator.BASE_SYSTEM_PROMPT,
         index: Optional[int] = 0,
     ) -> list[AugmentedUserReviews | UserReviews]:
