@@ -3,15 +3,15 @@ from sklearn.metrics import classification_report
 from torch.optim import Optimizer
 from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
-from dataloaders.custom_dataset import CustomDataset
+from transformers import AutoModelForSequenceClassification
+from ..dataloaders.custom_dataset import CustomDataset
 from torch.utils.data import DataLoader
 import pandas as pd
 from loguru import logger
 import torch
 from tqdm import tqdm
 import os
-from utils import save_classification_report
+from src.utils import save_classification_report
 import pickle
 import joblib
 

@@ -15,15 +15,18 @@ import torch
 from loguru import logger
 from sentence_transformers import SentenceTransformer
 
-from constants import NUM_REPHRASED_SENTENCES
+from ..constants import NUM_REPHRASED_SENTENCES
 from synthesizer.generator import DataGenerator
 from synthesizer.models import (
-    AugmentedUserReview,
     AugmentedUserReviews,
     SentimentPrompt,
-    UserReview,
+)
+from openai.types.chat.chat_completion_message_param import (
+    ChatCompletionSystemMessageParam,
 )
 from synthesizer.runner import AugGptRunner
+from ..utils import get_instructor_instance
+from ..constants import ORIGINAL_DATASET_PATH
 
 
 class PromptEvaluator:
@@ -33,7 +36,7 @@ class PromptEvaluator:
         model_name: str = "all-MiniLM-L6-v2",
     ):
         self.model = SentenceTransformer(model_name)
-        self._original_data = pd.read_csv("data/cleaned_user_reviews.csv")
+        self._original_data = pd.read_csv(ORIGINAL_DATASET_PATH)
         self._auggpt_runner = auggpt_runner
 
     def random_split(
@@ -54,7 +57,7 @@ class PromptEvaluator:
         return sampled_subset
 
     def generate_synthetic_data(
-        self, sentiment: Literal["neutral", "negative"]
+        self, sentiment: Literal["neutral", "negative"], prompt: str
     ) -> dict[str, list[str]]:
         subset = self.random_split(sentiment=sentiment)
         if subset.empty:
@@ -74,6 +77,10 @@ class PromptEvaluator:
             self._auggpt_runner._generate_reviews(
                 sentiment=sentiment,
                 user_prompt=SentimentPrompt.AUG_GPT_PROMPT,
+                augmentor_prompt=ChatCompletionSystemMessageParam(
+                    role="system",
+                    content=prompt,
+                ),
                 num_to_generate=NUM_REPHRASED_SENTENCES,
                 original_sentences=_original_sentences,
                 original_sentence_prompts=_original_sentence_prompts,
@@ -133,47 +140,56 @@ class PromptEvaluator:
                 dim=1,  # Compare along embedding dimension
             )
 
+            # NOTE: exclude the 'perfect' score
+            similarities = similarities[similarities < 1]
+            # print("Similarities after excluding perfect score: ", similarities)
+            if len(similarities) == 0:
+                logger.warning(
+                    "Similarities reduced to 0 after excluding perfect score"
+                )
+                continue
             # Calculate statistics for this sentence
             mean_similarity = similarities.mean().item()
             cosine_similarity_scores.append(mean_similarity)
 
             # Log detailed statistics for this sentence
-            logger.info(f"\nSimilarity stats for sentence: {sentence[:50]}...")
-            logger.info(f"  Mean: {mean_similarity:.4f}")
-            logger.info(f"  Min: {similarities.min().item():.4f}")
-            logger.info(f"  Max: {similarities.max().item():.4f}")
-            logger.info(f"  Std: {similarities.std().item():.4f}")
+            # logger.info(f"\nSimilarity stats for sentence: {sentence[:50]}...")
+            # logger.info(f"  Mean: {mean_similarity:.4f}")
+            # logger.info(f"  Min: {similarities.min().item():.4f}")
+            # logger.info(f"  Max: {similarities.max().item():.4f}")
+            # logger.info(f"  Std: {similarities.std().item():.4f}")
 
         # Calculate overall mean
         overall_mean = sum(cosine_similarity_scores) / len(cosine_similarity_scores)
-        logger.info(f"\nOverall average similarity score: {overall_mean:.4f}")
+        # logger.info(f"\nOverall average similarity score: {overall_mean:.4f}")
 
         return overall_mean
 
+    def main(
+        self,
+        sentiment: Literal["neutral", "negative"],
+        prompt: str,
+    ):
+        sentence_to_synthesized_reviews = self.generate_synthetic_data(
+            sentiment=sentiment, prompt=prompt
+        )
+        sentence_to_synthesized_reviews_embeddings, sentence_to_embeddings = (
+            self.create_emebeddings(sentence_to_synthesized_reviews)
+        )
+        return self.evaluate(
+            sentence_to_synthesized_reviews_embeddings, sentence_to_embeddings
+        )
+
 
 if __name__ == "__main__":
-    from google import genai
-    import instructor
-    import os
     from dotenv import load_dotenv
 
     load_dotenv()
 
-    instance = instructor.from_genai(
-        genai.Client(api_key=os.getenv("GOOGLE_AI_API_KEY"))
-    )
-    evaluator = PromptEvaluator(AugGptRunner(instance))
-
-    sentence_to_synthesized_reviews = evaluator.generate_synthetic_data(
-        sentiment="neutral"
-    )
-
-    sentence_to_synthesized_reviews_embeddings, sentence_to_embeddings = (
-        evaluator.create_emebeddings(sentence_to_synthesized_reviews)
-    )
-
-    average_cosine_similarity = evaluator.evaluate(
-        sentence_to_synthesized_reviews_embeddings, sentence_to_embeddings
+    evaluator = PromptEvaluator(AugGptRunner(get_instructor_instance()))
+    average_cosine_similarity = evaluator.main(
+        sentiment="neutral",
+        prompt="Bạn là một trợ lý hữu ích, có nhiệm vụ diễn đạt lại văn bản và làm cho câu văn trở nên mượt mà hơn.",
     )
 
     logger.info(f"Average cosine similarity: {average_cosine_similarity}")

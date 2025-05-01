@@ -2,7 +2,7 @@ from typing import Literal, Optional
 import instructor
 from openai import OpenAI
 
-from constants import NUM_REPHRASED_SENTENCES
+from src.constants import NUM_REPHRASED_SENTENCES, ORIGINAL_DATASET_PATH
 from .generator import DataGenerator
 from .models import AugmentedUserReviews, SentimentPrompt, UserReviews
 from instructor import Instructor
@@ -35,7 +35,7 @@ class AugGptRunner:
     def prepare_original_sentences(
         cls,
         sentiment: Literal["neutral", "negative"],  # The minority classes
-        data: pd.DataFrame = pd.read_csv("data/cleaned_user_reviews.csv"),
+        data: pd.DataFrame = pd.read_csv(ORIGINAL_DATASET_PATH),
     ) -> tuple[list[str], list[ChatCompletionUserMessageParam]]:
         """Get examples from the original dataset for each LLM call"""
         label_mapping = {"Positive": 1, "Neutral": 2, "Negative": 0}
@@ -80,6 +80,7 @@ class AugGptRunner:
         self,
         sentiment: Literal["neutral", "negative"],
         user_prompt: SentimentPrompt,
+        augmentor_prompt: ChatCompletionSystemMessageParam = BASE_AUGMENTOR_PROMPT,
         model: str = "gemini-2.0-flash",
         num_to_generate: int = 6,
         _: ChatCompletionSystemMessageParam = DataGenerator.BASE_SYSTEM_PROMPT,
@@ -122,7 +123,7 @@ class AugGptRunner:
                         user_prompt,
                         model,
                         num_to_generate,
-                        self.BASE_AUGMENTOR_PROMPT,
+                        augmentor_prompt,
                     )
                 )
                 logger.info(f"Generated reviews: {generated_samples}")
