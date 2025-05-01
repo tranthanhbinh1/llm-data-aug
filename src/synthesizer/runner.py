@@ -2,7 +2,7 @@ from typing import Literal, Optional
 import instructor
 from openai import OpenAI
 
-from src.constants import NUM_REPHRASED_SENTENCES
+from src.constants import NUM_REPHRASED_SENTENCES, ORIGINAL_DATASET_PATH
 from .generator import DataGenerator
 from .models import AugmentedUserReviews, SentimentPrompt, UserReviews
 from instructor import Instructor
@@ -35,9 +35,7 @@ class AugGptRunner:
     def prepare_original_sentences(
         cls,
         sentiment: Literal["neutral", "negative"],  # The minority classes
-        data: pd.DataFrame = pd.read_csv(
-            "/home/tb24/projects/llm-data-aug/data/cleaned_user_reviews.csv"
-        ),
+        data: pd.DataFrame = pd.read_csv(ORIGINAL_DATASET_PATH),
     ) -> tuple[list[str], list[ChatCompletionUserMessageParam]]:
         """Get examples from the original dataset for each LLM call"""
         label_mapping = {"Positive": 1, "Neutral": 2, "Negative": 0}
