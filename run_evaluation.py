@@ -1,18 +1,16 @@
-#!/usr/bin/env python3
-"""
-Wrapper script to run the prompt evaluator.
-Usage: python run_evaluation.py --sentiment neutral --prompt "Your prompt here"
-"""
-
 from dotenv import load_dotenv
 import argparse
-from typing import Literal
 
-from synthesizer.runner import AugGptRunner
-from utils import get_instructor_instance
-from evaluation.prompt_evaluator import PromptEvaluator
+from src.synthesizer.runner import AugGptRunner
+from src.utils import get_instructor_instance
+from src.evaluation.prompt_evaluator import PromptEvaluator
 
 if __name__ == "__main__":
+    """
+    Wrapper script to run the prompt evaluator.
+    Usage: python run_evaluation.py --sentiment neutral --prompt "Your prompt here"
+    """
+
     load_dotenv()
 
     parser = argparse.ArgumentParser(description="Evaluate prompt performance")

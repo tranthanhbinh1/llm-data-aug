@@ -15,7 +15,7 @@ import torch
 from loguru import logger
 from sentence_transformers import SentenceTransformer
 
-from constants import NUM_REPHRASED_SENTENCES
+from ..constants import NUM_REPHRASED_SENTENCES
 from synthesizer.generator import DataGenerator
 from synthesizer.models import (
     AugmentedUserReviews,
@@ -25,7 +25,8 @@ from openai.types.chat.chat_completion_message_param import (
     ChatCompletionSystemMessageParam,
 )
 from synthesizer.runner import AugGptRunner
-from utils import get_instructor_instance
+from ..utils import get_instructor_instance
+from ..constants import ORIGINAL_DATASET_PATH
 
 
 class PromptEvaluator:
@@ -35,9 +36,7 @@ class PromptEvaluator:
         model_name: str = "all-MiniLM-L6-v2",
     ):
         self.model = SentenceTransformer(model_name)
-        self._original_data = pd.read_csv(
-            "/home/tb24/projects/llm-data-aug/data/cleaned_user_reviews.csv"
-        )
+        self._original_data = pd.read_csv(ORIGINAL_DATASET_PATH)
         self._auggpt_runner = auggpt_runner
 
     def random_split(

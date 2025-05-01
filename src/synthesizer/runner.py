@@ -2,7 +2,7 @@ from typing import Literal, Optional
 import instructor
 from openai import OpenAI
 
-from constants import NUM_REPHRASED_SENTENCES
+from src.constants import NUM_REPHRASED_SENTENCES
 from .generator import DataGenerator
 from .models import AugmentedUserReviews, SentimentPrompt, UserReviews
 from instructor import Instructor
