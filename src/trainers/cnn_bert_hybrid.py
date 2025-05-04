@@ -8,7 +8,7 @@ import random
 from loguru import logger as logging
 import numpy as np
 from sklearn.model_selection import train_test_split
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from transformers import AutoTokenizer, AutoModel
 from sklearn.preprocessing import LabelEncoder
 from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
@@ -79,7 +79,9 @@ class CNN(nn.Module):
         pooled_3 = F.max_pool1d(conved_3, conved_3.shape[2]).squeeze(2)
 
         # Concatenate pooled outputs
-        cat = self.dropout(torch.cat((pooled_0, pooled_1, pooled_2, pooled_3), dim=1))
+        cat = self.dropout(
+            torch.cat((pooled_0, pooled_1, pooled_2, pooled_3), dim=1).cuda()
+        )
 
         # Final linear layer
         return self.fc(cat)
@@ -148,7 +150,7 @@ class CNNBertHybridTrainer:
             (test_sentences, test_labels),
         )
 
-    def _tokenize(
+    def encode_tokenize(
         self,
         sentences: list,
         labels: list,
@@ -202,11 +204,18 @@ class CNNBertHybridTrainer:
         labels = torch.tensor(labels).to(device)
         sent_index = torch.tensor(sent_index).to(device)
 
+        logging.info("Original: ", sentences[0])
+        logging.info("Token IDs:", input_ids[0])
+
         # Sentence index, token ids, attention masks, and labels
         return sent_index, input_ids, attention_masks, labels
 
     def _create_loaders(
-        self, inputs_ids, attention_masks, encoded_label_tensors, batch_size: int
+        self,
+        inputs_ids: torch.Tensor,
+        attention_masks: torch.Tensor,
+        encoded_label_tensors: torch.Tensor,
+        batch_size: int,
     ):
         train_dataset = TensorDataset(
             inputs_ids, attention_masks, encoded_label_tensors
@@ -251,13 +260,9 @@ class CNNBertHybridTrainer:
             optimizer.zero_grad()
 
             # Get BERT output
-            bert_output = self.bert_model(b_input_ids, b_input_mask)
-            # We want the hidden states, not the classification output
-            embedded = bert_output.hidden_states[-1]  # Get last hidden state
-            print("BERT output shape:", embedded.shape)
+            embeddings = self.bert_model(b_input_ids, b_input_mask)[0]
 
-            predictions = cnn_model(embedded)
-            print("CNN output shape:", predictions.shape)
+            predictions = cnn_model(embeddings)
 
             loss = criterion(predictions, b_labels)
 
@@ -272,7 +277,7 @@ class CNNBertHybridTrainer:
 
         return epoch_loss / len(train_data_loader), epoch_acc / len(train_data_loader)
 
-    # TODO: Eval, Training Loop, Saving
+    # TODO: Saving
 
     @staticmethod
     def _predictions_labels(preds, labels):
@@ -301,8 +306,10 @@ class CNNBertHybridTrainer:
             b_input_mask = batch[1].to(self.device)
             b_labels = batch[2].to(self.device)
 
-            embedded = self.bert_model(b_input_ids, b_input_mask)[0]
-            predictions = cnn_model(embedded)
+            # Get BERT output with hidden states
+            embeddings = self.bert_model(b_input_ids, b_input_mask)[0]
+
+            predictions = cnn_model(embeddings)
 
             loss = criterion(predictions, b_labels)
             epoch_loss += loss.item()
@@ -380,10 +387,8 @@ class CNNBertHybridTrainer:
 
 if __name__ == "__main__":
     # Initialize BERT with output_hidden_states=True
-    bert_model = AutoModelForSequenceClassification.from_pretrained(
+    bert_model = AutoModel.from_pretrained(
         "vinai/phobert-base",
-        num_labels=3,
-        output_hidden_states=True,  # Enable hidden states output
     )
 
     trainer = CNNBertHybridTrainer(
@@ -406,19 +411,19 @@ if __name__ == "__main__":
         train_input_ids,
         train_attention_masks,
         train_encoded_label_tensors,
-    ) = trainer._tokenize(train_sentences, train_labels)
+    ) = trainer.encode_tokenize(train_sentences, train_labels)
     (
         val_sent_index,
         val_input_ids,
         val_attention_masks,
         val_encoded_label_tensors,
-    ) = trainer._tokenize(val_sentences, val_labels)
+    ) = trainer.encode_tokenize(val_sentences, val_labels)
     (
         test_sent_index,
         test_input_ids,
         test_attention_masks,
         test_encoded_label_tensors,
-    ) = trainer._tokenize(test_sentences, test_labels)
+    ) = trainer.encode_tokenize(test_sentences, test_labels)
 
     # Create loaders
     train_data_loader = trainer._create_loaders(
