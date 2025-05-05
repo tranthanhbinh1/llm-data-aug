@@ -56,15 +56,10 @@ class CNN(nn.Module):
 
     def forward(self, encoded):
         # encoded = [batch size, seq len, bert_dim]
-        print("Input shape:", encoded.shape)
-
         # Project embeddings
         embedded = self.fc_input(encoded)
-        print("After projection shape:", embedded.shape)
-
         # Permute for CNN [batch size, emb dim, seq len]
         embedded = embedded.permute(0, 2, 1)
-        print("After permute shape:", embedded.shape)
 
         # Apply convolutions
         conved_0 = F.relu(self.conv_0(embedded))
@@ -88,6 +83,8 @@ class CNN(nn.Module):
 
 
 class CNNBertHybridTrainer:
+    SEED = 42
+
     def __init__(
         self,
         bert_model,
@@ -103,14 +100,19 @@ class CNNBertHybridTrainer:
         self.device = device
         self.data = pd.read_csv(data_path)
         self.bert_model.to(self.device)
+        random.seed(self.SEED)
+        np.random.seed(self.SEED)
+        torch.manual_seed(self.SEED)
+        torch.cuda.manual_seed(self.SEED)
+        torch.backends.cudnn.deterministic = True
 
     def _prepare_data(self):
         # TODO: this process needs standardization
         train_data, test_data = train_test_split(
-            self.data, test_size=0.2, random_state=42
+            self.data, test_size=0.2, random_state=self.SEED
         )
         train_data, val_data = train_test_split(
-            train_data, test_size=0.2, random_state=42
+            train_data, test_size=0.2, random_state=self.SEED
         )
 
         X_train = train_data["Review"].tolist()
@@ -126,10 +128,10 @@ class CNNBertHybridTrainer:
 
     def _split_sentences_and_labels(self):
         train_data, test_data = train_test_split(
-            self.data, test_size=0.2, random_state=42
+            self.data, test_size=0.2, random_state=self.SEED
         )
         train_data, val_data = train_test_split(
-            train_data, test_size=0.2, random_state=42
+            train_data, test_size=0.2, random_state=self.SEED
         )
 
         train_sentences = list(train_data["Review"].values)
@@ -277,8 +279,6 @@ class CNNBertHybridTrainer:
 
         return epoch_loss / len(train_data_loader), epoch_acc / len(train_data_loader)
 
-    # TODO: Saving
-
     @staticmethod
     def _predictions_labels(preds, labels):
         pred = np.argmax(preds, axis=1).flatten()
@@ -365,9 +365,9 @@ class CNNBertHybridTrainer:
             )
             end_time = time.time()
 
-            if macro_f1 > best_macro_f1:
-                best_macro_f1 = macro_f1
-                torch.save(cnn_model.state_dict(), "best_model.pth")
+            # if macro_f1 > best_macro_f1:
+            #     best_macro_f1 = macro_f1
+            #     torch.save(cnn_model.state_dict(), "best_model.pth")
 
             epoch_mins, epoch_secs = self.epoch_time(start_time, end_time)
 
@@ -388,7 +388,7 @@ class CNNBertHybridTrainer:
 if __name__ == "__main__":
     # Initialize BERT with output_hidden_states=True
     bert_model = AutoModel.from_pretrained(
-        "vinai/phobert-base",
+        "vinai/phobert-base-v2",
     )
 
     trainer = CNNBertHybridTrainer(
@@ -458,3 +458,5 @@ if __name__ == "__main__":
         criterion,
         val_data_loader,
     )
+
+    # TODO: implement argparse and print out the F1 Score only
