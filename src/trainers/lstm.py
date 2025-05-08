@@ -17,23 +17,36 @@ from torch.optim import Optimizer
 from torch.utils.data import DataLoader, RandomSampler, TensorDataset
 
 
-class LSTM(nn.Module):
-    def __init__(self, embedding_dim, hidden_dim, output_dim, dropout):
+class LSTMModel(nn.Module):
+    def __init__(
+        self,
+        vocab_size,
+        embedding_dim,
+        hidden_dim1,
+        hidden_dim2,
+        dense_dim,
+        output_dim,
+        dropout_rate,
+        seq_length,
+    ):
         super().__init__()
-        self.embedding = nn.Embedding(embedding_dim, hidden_dim)
-        self.lstm = nn.LSTM(hidden_dim, hidden_dim, batch_first=True)
-        self.fc = nn.Linear(hidden_dim, output_dim)
-        self.dropout = nn.Dropout(dropout)
+        self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        self.lstm1 = nn.LSTM(
+            embedding_dim, hidden_dim1, batch_first=True, return_sequences=True
+        )
+        self.lstm2 = nn.LSTM(hidden_dim1, hidden_dim2, batch_first=True)
+        self.dense1 = nn.Linear(hidden_dim2, dense_dim)
+        self.dropout = nn.Dropout(dropout_rate)
+        self.dense2 = nn.Linear(dense_dim, output_dim)
 
     def forward(self, x):
-        h = torch.zeros(1, x.size(0), self.lstm.hidden_size).to(x.device)
-        c = torch.zeros(1, x.size(0), self.lstm.hidden_size).to(x.device)
-
         x = self.embedding(x)
-        x, (h, c) = self.lstm(x, (h, c))
+        x, _ = self.lstm1(x)
+        x, _ = self.lstm2(x)
+        x = torch.relu(self.dense1(x))
         x = self.dropout(x)
-        x = self.fc(x)
-        return x
+        x = self.dense2(x)
+        return F.log_softmax(x, dim=1)
 
 
 class LSTMTrainer:
@@ -41,7 +54,7 @@ class LSTMTrainer:
 
     def __init__(
         self,
-        model,
+        model: LSTMModel,
         data_path: str,
         tokenizer: PreTrainedTokenizer
         | PreTrainedTokenizerFast = AutoTokenizer.from_pretrained("vinai/phobert-base"),
@@ -104,3 +117,31 @@ class LSTMTrainer:
             ),
             (test_sentences, test_labels),
         )
+
+    def train(
+        self, optimizer: Optimizer, criterion: nn.Module, train_loader: DataLoader
+    ):
+        self.model.train()
+        for batch_x, batch_y in train_loader:
+            batch_x = batch_x.to(self.device)
+            batch_y = batch_y.to(self.device)
+
+            optimizer.zero_grad()
+            outputs = self.model(batch_x)
+            loss = criterion(outputs, batch_y)
+            loss.backward()
+            optimizer.step()
+
+    @torch.no_grad()
+    def eval(
+        self,
+        criterion: nn.Module,
+        val_loader: DataLoader,
+        X_val: torch.Tensor,
+        y_val: torch.Tensor,
+    ):
+        val_loss = 0
+        self.model.eval()
+
+        outputs = self.model(X_val.to(self.device))
+        val_loss = criterion(outputs, y_val.to(self.device))
