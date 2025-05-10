@@ -1,4 +1,6 @@
+import os
 import time
+from gguf import Optional
 import pandas as pd
 from sklearn.metrics import classification_report, f1_score, accuracy_score
 import torch
@@ -15,8 +17,9 @@ from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 from tqdm import tqdm
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader, RandomSampler, TensorDataset
+from torch.nn.utils.rnn import pad_sequence
 
-from src.constants import LABEL_MAPPING
+from src.constants import LABEL_MAPPING, ORIGINAL_DATASET_PATH
 
 
 class LSTMModel(nn.Module):
@@ -29,13 +32,11 @@ class LSTMModel(nn.Module):
         dense_dim,
         output_dim,
         dropout_rate,
-        seq_length,
+        seq_length: Optional[int] = None,
     ):
         super().__init__()
         self.embedding = nn.Embedding(vocab_size, embedding_dim)
-        self.lstm1 = nn.LSTM(
-            embedding_dim, hidden_dim1, batch_first=True, return_sequences=True
-        )
+        self.lstm1 = nn.LSTM(embedding_dim, hidden_dim1, batch_first=True)
         self.lstm2 = nn.LSTM(hidden_dim1, hidden_dim2, batch_first=True)
         self.dense1 = nn.Linear(hidden_dim2, dense_dim)
         self.dropout = nn.Dropout(dropout_rate)
@@ -45,10 +46,11 @@ class LSTMModel(nn.Module):
         x = self.embedding(x)
         x, _ = self.lstm1(x)
         x, _ = self.lstm2(x)
+        x = x[:, -1, :]  # Take only the last hidden state for classification
         x = torch.relu(self.dense1(x))
         x = self.dropout(x)
         x = self.dense2(x)
-        return F.log_softmax(x, dim=1)
+        return x
 
 
 class LSTMTrainer:
@@ -64,10 +66,20 @@ class LSTMTrainer:
             "cuda" if torch.cuda.is_available() else "cpu"
         ),
     ):
+        self.device = device
         self.model = model
         self.tokenizer = tokenizer
-        self.device = device
+
         self.data = pd.read_csv(data_path)
+        initial_rows = len(self.data)
+
+        self.data = self.data.dropna(subset=["Review", "Sentiment"])
+        self.data = self.data.reset_index(drop=True)
+
+        removed_rows = initial_rows - len(self.data)
+        if removed_rows > 0:
+            logging.warning(f"Removed {removed_rows} rows containing NaN values")
+
         random.seed(self.SEED)
         np.random.seed(self.SEED)
         torch.manual_seed(self.SEED)
@@ -75,7 +87,7 @@ class LSTMTrainer:
         torch.backends.cudnn.deterministic = True
 
     def _prepare_data(self):
-        # TODO: this process needs standardization
+        # Split the data
         train_data, test_data = train_test_split(
             self.data, test_size=0.2, random_state=self.SEED
         )
@@ -83,14 +95,33 @@ class LSTMTrainer:
             train_data, test_size=0.2, random_state=self.SEED
         )
 
-        X_train = train_data["Review"].tolist()
-        y_train = train_data["Sentiment"].tolist()
+        # Convert text to sequences using tokenizer
+        X_train = [
+            self.tokenizer.encode(text, add_special_tokens=True)
+            for text in train_data["Review"]
+        ]
+        X_val = [
+            self.tokenizer.encode(text, add_special_tokens=True)
+            for text in val_data["Review"]
+        ]
+        X_test = [
+            self.tokenizer.encode(text, add_special_tokens=True)
+            for text in test_data["Review"]
+        ]
 
-        X_val = val_data["Review"].tolist()
-        y_val = val_data["Sentiment"].tolist()
+        # Log max token ID for debugging
+        max_token_id_train = max([max(seq) if seq else 0 for seq in X_train])
+        max_token_id_val = max([max(seq) if seq else 0 for seq in X_val])
+        max_token_id_test = max([max(seq) if seq else 0 for seq in X_test])
+        logging.info(f"Max token ID in train: {max_token_id_train}")
+        logging.info(f"Max token ID in val: {max_token_id_val}")
+        logging.info(f"Max token ID in test: {max_token_id_test}")
 
-        X_test = test_data["Review"].tolist()
-        y_test = test_data["Sentiment"].tolist()
+        # Convert labels to integers using LabelEncoder
+        label_encoder = LabelEncoder()
+        y_train = label_encoder.fit_transform(train_data["Sentiment"])
+        y_val = label_encoder.transform(val_data["Sentiment"])
+        y_test = label_encoder.transform(test_data["Sentiment"])
 
         return (X_train, y_train), (X_val, y_val), (X_test, y_test)
 
@@ -120,10 +151,37 @@ class LSTMTrainer:
             (test_sentences, test_labels),
         )
 
+    def load_data(self):
+        (X_train, y_train), (X_val, y_val), (X_test, y_test) = self._prepare_data()
+
+        # Convert sequences to tensors
+        X_train_tensor = [torch.tensor(seq, dtype=torch.long) for seq in X_train]
+        X_val_tensor = [torch.tensor(seq, dtype=torch.long) for seq in X_val]
+        X_test_tensor = [torch.tensor(seq, dtype=torch.long) for seq in X_test]
+
+        # Convert labels to tensors
+        y_train_tensor = torch.tensor(y_train, dtype=torch.long)
+        y_val_tensor = torch.tensor(y_val, dtype=torch.long)
+        y_test_tensor = torch.tensor(y_test, dtype=torch.long)
+
+        # Pad sequences
+        X_train_padded = pad_sequence(X_train_tensor, batch_first=True)
+        X_val_padded = pad_sequence(X_val_tensor, batch_first=True)
+        X_test_padded = pad_sequence(X_test_tensor, batch_first=True)
+
+        return (
+            (X_train_padded, y_train_tensor),
+            (X_val_padded, y_val_tensor),
+            (X_test_padded, y_test_tensor),
+        )
+
     def train(
         self, optimizer: Optimizer, criterion: nn.Module, train_loader: DataLoader
     ):
         self.model.train()
+        total_loss = 0
+        num_batches = 0
+
         for batch_x, batch_y in train_loader:
             batch_x = batch_x.to(self.device)
             batch_y = batch_y.to(self.device)
@@ -134,6 +192,11 @@ class LSTMTrainer:
             loss.backward()
             optimizer.step()
 
+            total_loss += loss.item()
+            num_batches += 1
+
+        return total_loss / max(1, num_batches)  # Return average loss
+
     @torch.no_grad()
     def eval(
         self,
@@ -142,11 +205,12 @@ class LSTMTrainer:
         X_val: torch.Tensor,
         y_val: torch.Tensor,
     ):
-        val_loss = 0
         self.model.eval()
+        X_val = X_val.to(self.device)
+        y_val = y_val.to(self.device)
 
-        outputs = self.model(X_val.to(self.device))
-        val_loss = criterion(outputs, y_val.to(self.device))
+        outputs = self.model(X_val)
+        val_loss = criterion(outputs, y_val)
 
         return val_loss
 
@@ -163,6 +227,9 @@ class LSTMTrainer:
     ):
         best_val_loss = float("inf")
         patience_counter = 0
+
+        self.model.to(self.device)
+        criterion = criterion.to(self.device)  # Move criterion to device
 
         for epoch in range(epochs):
             train_loss = self.train(optimizer, criterion, train_loader)
@@ -185,12 +252,13 @@ class LSTMTrainer:
     @torch.no_grad()
     def evaluate(self, X_val: torch.Tensor, y_val: torch.Tensor):
         self.model.eval()
-        X_val.to(self.device)
-        y_val.to(self.device)
+        self.model.to(self.device)
+        X_val = X_val.to(self.device)
+        y_val = y_val.to(self.device)
 
         outputs = self.model(X_val)
         _, preds = torch.max(outputs, dim=1)
-        accuracy = accuracy_score(y_val, preds.cpu().numpy())
+        accuracy = accuracy_score(y_val.cpu().numpy(), preds.cpu().numpy())
         logging.info(f"Accuracy: {accuracy:.4f}")
 
         return accuracy
@@ -198,16 +266,18 @@ class LSTMTrainer:
 
 if __name__ == "__main__":
     # Create model instance
-    vocab_size = len(tokenizer.word_index) + 1
+    tokenizer = AutoTokenizer.from_pretrained("vinai/phobert-base")
+    vocab_size = len(tokenizer.get_vocab())  # Get actual vocab size from tokenizer
+    logging.info(f"Tokenizer vocabulary size: {vocab_size}")
+
     embedding_dim = 50
-    seq_length = X_padded.shape[1]
     hidden_dim1 = 128
     hidden_dim2 = 64
     dense_dim = 64
     output_dim = len(LABEL_MAPPING)
     dropout_rate = 0.5
 
-    model = LSTMModel(
+    lstm = LSTMModel(
         vocab_size,
         embedding_dim,
         hidden_dim1,
@@ -215,5 +285,43 @@ if __name__ == "__main__":
         dense_dim,
         output_dim,
         dropout_rate,
-        seq_length,
     )
+
+    trainer = LSTMTrainer(
+        model=lstm,
+        data_path=ORIGINAL_DATASET_PATH,
+        tokenizer=AutoTokenizer.from_pretrained("vinai/phobert-base"),
+    )
+
+    (
+        (X_train_padded, y_train_tensor),
+        (X_val_padded, y_val_tensor),
+        (X_test_padded, y_test_tensor),
+    ) = trainer.load_data()
+
+    train_loader = DataLoader(
+        TensorDataset(X_train_padded, y_train_tensor),
+        batch_size=16,
+        shuffle=True,
+    )
+
+    val_loader = DataLoader(
+        TensorDataset(X_val_padded, y_val_tensor),
+        batch_size=16,
+        shuffle=True,
+    )
+
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(lstm.parameters(), lr=0.001)
+
+    trainer.training_loop(
+        optimizer,
+        criterion,
+        train_loader,
+        val_loader,
+        X_val_padded,
+        y_val_tensor,
+        epochs=10,
+    )
+
+    trainer.evaluate(X_val_padded, y_val_tensor)

@@ -126,6 +126,7 @@ class CNNBertHybridTrainer:
 
         return (X_train, y_train), (X_val, y_val), (X_test, y_test)
 
+    # NOTE: This is redundant, we should use the _prepare_data method instead
     def _split_sentences_and_labels(self):
         train_data, test_data = train_test_split(
             self.data, test_size=0.2, random_state=self.SEED
@@ -134,14 +135,14 @@ class CNNBertHybridTrainer:
             train_data, test_size=0.2, random_state=self.SEED
         )
 
-        train_sentences = list(train_data["Review"].values)
-        train_labels = list(train_data["Sentiment"].values)
+        train_sentences = train_data["Review"].tolist()
+        train_labels = train_data["Sentiment"].tolist()
 
-        val_sentences = list(val_data["Review"].values)
-        val_labels = list(val_data["Sentiment"].values)
+        val_sentences = val_data["Review"].tolist()
+        val_labels = val_data["Sentiment"].tolist()
 
-        test_sentences = list(test_data["Review"].values)
-        test_labels = list(test_data["Sentiment"].values)
+        test_sentences = test_data["Review"].tolist()
+        test_labels = test_data["Sentiment"].tolist()
 
         return (
             (train_sentences, train_labels),
