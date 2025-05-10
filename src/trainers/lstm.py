@@ -16,6 +16,8 @@ from tqdm import tqdm
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader, RandomSampler, TensorDataset
 
+from src.constants import LABEL_MAPPING
+
 
 class LSTMModel(nn.Module):
     def __init__(
@@ -100,14 +102,14 @@ class LSTMTrainer:
             train_data, test_size=0.2, random_state=self.SEED
         )
 
-        train_sentences = list(train_data["Review"].values)
-        train_labels = list(train_data["Sentiment"].values)
+        train_sentences = train_data["Review"].to_list()
+        train_labels = train_data["Sentiment"].to_list()
 
-        val_sentences = list(val_data["Review"].values)
-        val_labels = list(val_data["Sentiment"].values)
+        val_sentences = val_data["Review"].to_list()
+        val_labels = val_data["Sentiment"].to_list()
 
-        test_sentences = list(test_data["Review"].values)
-        test_labels = list(test_data["Sentiment"].values)
+        test_sentences = test_data["Review"].to_list()
+        test_labels = test_data["Sentiment"].to_list()
 
         return (
             (train_sentences, train_labels),
@@ -145,3 +147,73 @@ class LSTMTrainer:
 
         outputs = self.model(X_val.to(self.device))
         val_loss = criterion(outputs, y_val.to(self.device))
+
+        return val_loss
+
+    def training_loop(
+        self,
+        optimizer: Optimizer,
+        criterion: nn.Module,
+        train_loader: DataLoader,
+        val_loader: DataLoader,
+        X_val: torch.Tensor,
+        y_val: torch.Tensor,
+        epochs: int = 10,
+        patience: int = 10,
+    ):
+        best_val_loss = float("inf")
+        patience_counter = 0
+
+        for epoch in range(epochs):
+            train_loss = self.train(optimizer, criterion, train_loader)
+            val_loss = self.eval(criterion, val_loader, X_val, y_val)
+
+            logging.info(
+                f"Epoch {epoch + 1}/{epochs}, Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}"
+            )
+
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                patience_counter = 0
+                torch.save(self.model.state_dict(), "best_model.pth")
+            else:
+                patience_counter += 1
+            if patience_counter >= patience:
+                logging.info(f"Early stopping triggered at epoch {epoch + 1}")
+                break
+
+    @torch.no_grad()
+    def evaluate(self, X_val: torch.Tensor, y_val: torch.Tensor):
+        self.model.eval()
+        X_val.to(self.device)
+        y_val.to(self.device)
+
+        outputs = self.model(X_val)
+        _, preds = torch.max(outputs, dim=1)
+        accuracy = accuracy_score(y_val, preds.cpu().numpy())
+        logging.info(f"Accuracy: {accuracy:.4f}")
+
+        return accuracy
+
+
+if __name__ == "__main__":
+    # Create model instance
+    vocab_size = len(tokenizer.word_index) + 1
+    embedding_dim = 50
+    seq_length = X_padded.shape[1]
+    hidden_dim1 = 128
+    hidden_dim2 = 64
+    dense_dim = 64
+    output_dim = len(LABEL_MAPPING)
+    dropout_rate = 0.5
+
+    model = LSTMModel(
+        vocab_size,
+        embedding_dim,
+        hidden_dim1,
+        hidden_dim2,
+        dense_dim,
+        output_dim,
+        dropout_rate,
+        seq_length,
+    )

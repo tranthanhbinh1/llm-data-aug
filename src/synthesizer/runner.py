@@ -2,7 +2,7 @@ from typing import Literal, Optional
 import instructor
 from openai import OpenAI
 
-from src.constants import NUM_REPHRASED_SENTENCES, ORIGINAL_DATASET_PATH
+from src.constants import LABEL_MAPPING, NUM_REPHRASED_SENTENCES, ORIGINAL_DATASET_PATH
 from .generator import DataGenerator
 from .models import AugmentedUserReviews, SentimentPrompt, UserReviews
 from instructor import Instructor
@@ -38,15 +38,13 @@ class AugGptRunner:
         data: pd.DataFrame = pd.read_csv(ORIGINAL_DATASET_PATH),
     ) -> tuple[list[str], list[ChatCompletionUserMessageParam]]:
         """Get examples from the original dataset for each LLM call"""
-        label_mapping = {"Positive": 1, "Neutral": 2, "Negative": 0}
-
         # Make a copy to avoid modifying the input
         data = data.copy()
 
         # Check if Sentiment is already mapped
         if data["Sentiment"].dtype == "object":
             logger.info("Mapping sentiment labels to numeric values")
-            data["Sentiment"] = data["Sentiment"].map(label_mapping)
+            data["Sentiment"] = data["Sentiment"].map(LABEL_MAPPING)
 
         target_sentiment = DataGenerator.SENTIMENT_MAPPING[sentiment]
         logger.info(f"Filtering for sentiment {sentiment} (value: {target_sentiment})")
