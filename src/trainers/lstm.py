@@ -1,25 +1,23 @@
 import os
-import time
-from gguf import Optional
+from typing import Optional
 import pandas as pd
 from sklearn.metrics import classification_report, f1_score, accuracy_score
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import random
 from loguru import logger as logging
 import numpy as np
 from sklearn.model_selection import train_test_split
-from transformers import AutoTokenizer, AutoModel
+from transformers import AutoTokenizer
 from sklearn.preprocessing import LabelEncoder
 from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 from tqdm import tqdm
 from torch.optim import Optimizer
-from torch.utils.data import DataLoader, RandomSampler, TensorDataset
+from torch.utils.data import DataLoader, TensorDataset
 from torch.nn.utils.rnn import pad_sequence
 
-from src.constants import LABEL_MAPPING, ORIGINAL_DATASET_PATH
+from src.constants import DATA_PATH, LABEL_MAPPING, ORIGINAL_DATASET_PATH
 
 
 class LSTMModel(nn.Module):
@@ -47,7 +45,7 @@ class LSTMModel(nn.Module):
         x, _ = self.lstm1(x)
         x, _ = self.lstm2(x)
         x = x[:, -1, :]  # Take only the last hidden state for classification
-        x = torch.relu(self.dense1(x))
+        x = torch.relu_(self.dense1(x))
         x = self.dropout(x)
         x = self.dense2(x)
         return x
@@ -125,32 +123,6 @@ class LSTMTrainer:
 
         return (X_train, y_train), (X_val, y_val), (X_test, y_test)
 
-    def _split_sentences_and_labels(self):
-        train_data, test_data = train_test_split(
-            self.data, test_size=0.2, random_state=self.SEED
-        )
-        train_data, val_data = train_test_split(
-            train_data, test_size=0.2, random_state=self.SEED
-        )
-
-        train_sentences = train_data["Review"].to_list()
-        train_labels = train_data["Sentiment"].to_list()
-
-        val_sentences = val_data["Review"].to_list()
-        val_labels = val_data["Sentiment"].to_list()
-
-        test_sentences = test_data["Review"].to_list()
-        test_labels = test_data["Sentiment"].to_list()
-
-        return (
-            (train_sentences, train_labels),
-            (
-                val_sentences,
-                val_labels,
-            ),
-            (test_sentences, test_labels),
-        )
-
     def load_data(self):
         (X_train, y_train), (X_val, y_val), (X_test, y_test) = self._prepare_data()
 
@@ -182,7 +154,8 @@ class LSTMTrainer:
         total_loss = 0
         num_batches = 0
 
-        for batch_x, batch_y in train_loader:
+        progress_bar = tqdm(train_loader, desc="Training", leave=False)
+        for batch_x, batch_y in progress_bar:
             batch_x = batch_x.to(self.device)
             batch_y = batch_y.to(self.device)
 
@@ -194,6 +167,9 @@ class LSTMTrainer:
 
             total_loss += loss.item()
             num_batches += 1
+
+            # Update progress bar with current loss
+            progress_bar.set_postfix(loss=f"{loss.item():.4f}")
 
         return total_loss / max(1, num_batches)  # Return average loss
 
@@ -231,9 +207,17 @@ class LSTMTrainer:
         self.model.to(self.device)
         criterion = criterion.to(self.device)  # Move criterion to device
 
-        for epoch in range(epochs):
+        epoch_progress = tqdm(range(epochs), desc="Epochs")
+        for epoch in epoch_progress:
             train_loss = self.train(optimizer, criterion, train_loader)
             val_loss = self.eval(criterion, val_loader, X_val, y_val)
+
+            # Update progress bar with metrics
+            epoch_progress.set_postfix(
+                train_loss=f"{train_loss:.4f}",
+                val_loss=f"{val_loss:.4f}",
+                patience=patience_counter,
+            )
 
             logging.info(
                 f"Epoch {epoch + 1}/{epochs}, Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}"
@@ -256,10 +240,18 @@ class LSTMTrainer:
         X_val = X_val.to(self.device)
         y_val = y_val.to(self.device)
 
+        logging.info("Evaluating model...")
         outputs = self.model(X_val)
         _, preds = torch.max(outputs, dim=1)
+
+        # Count predictions per class
+        pred_counts = np.bincount(preds.cpu().numpy(), minlength=len(LABEL_MAPPING))
+        logging.info(f"Predictions per class: {pred_counts}")
+
         accuracy = accuracy_score(y_val.cpu().numpy(), preds.cpu().numpy())
         logging.info(f"Accuracy: {accuracy:.4f}")
+
+        logging.info(classification_report(y_val.cpu().numpy(), preds.cpu().numpy()))
 
         return accuracy
 
@@ -289,8 +281,11 @@ if __name__ == "__main__":
 
     trainer = LSTMTrainer(
         model=lstm,
-        data_path=ORIGINAL_DATASET_PATH,
-        tokenizer=AutoTokenizer.from_pretrained("vinai/phobert-base"),
+        data_path=os.path.join(
+            DATA_PATH,
+            "llm_generated/gemini-2.0-flash/auggpt_upsampled_user_reviews_cleaned.csv",
+        ),
+        tokenizer=AutoTokenizer.from_pretrained("vinai/phobert-base-v2"),
     )
 
     (
