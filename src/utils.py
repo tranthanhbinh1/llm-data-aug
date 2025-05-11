@@ -1,6 +1,6 @@
 import os
 import re
-from constants import DATA_PATH, PROJECT_ROOT
+from .constants import DATA_PATH, PROJECT_ROOT
 from vncorenlp import VnCoreNLP
 
 import pandas as pd
