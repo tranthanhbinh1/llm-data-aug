@@ -17,6 +17,14 @@ from torch.optim import Optimizer
 from torch.utils.data import DataLoader, RandomSampler, TensorDataset
 import argparse
 import os
+from src.utils import (
+    normalize_repeated_words,
+    remove_non_alphanumeric,
+    remove_special_characters,
+    expand_abbr,
+    tokenize_text,
+    abbr,
+)
 
 from src.constants import DATA_PATH
 
@@ -98,20 +106,54 @@ class CNNBertHybridTrainer:
         device: torch.device = torch.device(
             "cuda" if torch.cuda.is_available() else "cpu"
         ),
+        freeze_bert: bool = True,
     ):
         self.bert_model = bert_model
         self.tokenizer = tokenizer
         self.device = device
         self.data = pd.read_csv(data_path)
+
+        # Move BERT to device
         self.bert_model.to(self.device)
+
+        # Freeze BERT weights if specified
+        if freeze_bert:
+            for param in self.bert_model.parameters():
+                param.requires_grad = False
+            logging.info("BERT model parameters frozen")
+        else:
+            logging.info("BERT model parameters trainable")
+
+        # Count trainable parameters
+        total_params = sum(p.numel() for p in self.bert_model.parameters())
+        trainable_params = sum(
+            p.numel() for p in self.bert_model.parameters() if p.requires_grad
+        )
+        logging.info(
+            f"BERT parameters: {total_params:,} total, {trainable_params:,} trainable"
+        )
+
+        # Set random seeds
         random.seed(self.SEED)
         np.random.seed(self.SEED)
         torch.manual_seed(self.SEED)
         torch.cuda.manual_seed(self.SEED)
         torch.backends.cudnn.deterministic = True
 
+    def _words_processing(self):
+        # Apply preprocessing functions to the 'review' column
+        self.data["Review"] = self.data["Review"].apply(
+            str.lower
+        )  # Chuyển đổi văn bản thành chữ thường trước khi xử lý
+        self.data["Review"] = self.data["Review"].apply(remove_non_alphanumeric)
+        self.data["Review"] = self.data["Review"].apply(lambda x: expand_abbr(x, abbr))
+        self.data["Review"] = self.data["Review"].apply(remove_special_characters)
+        self.data["Review"] = self.data["Review"].apply(normalize_repeated_words)
+        self.data["tokenized_text"] = self.data["Review"].apply(tokenize_text)
+
     def _prepare_data(self):
-        # TODO: this process needs standardization
+        self._words_processing()
+        # Split data into train, validation and test sets
         train_data, test_data = train_test_split(
             self.data, test_size=0.2, random_state=self.SEED
         )
@@ -119,41 +161,24 @@ class CNNBertHybridTrainer:
             train_data, test_size=0.2, random_state=self.SEED
         )
 
-        X_train = train_data["Review"].tolist()
-        y_train = train_data["Sentiment"].tolist()
-
-        X_val = val_data["Review"].tolist()
-        y_val = val_data["Sentiment"].tolist()
-
-        X_test = test_data["Review"].tolist()
-        y_test = test_data["Sentiment"].tolist()
-
-        return (X_train, y_train), (X_val, y_val), (X_test, y_test)
-
-    # NOTE: This is redundant, we should use the _prepare_data method instead
-    def _split_sentences_and_labels(self):
-        train_data, test_data = train_test_split(
-            self.data, test_size=0.2, random_state=self.SEED
-        )
-        train_data, val_data = train_test_split(
-            train_data, test_size=0.2, random_state=self.SEED
-        )
-
-        train_sentences = train_data["Review"].tolist()
+        # Extract sentences and labels
+        train_sentences = train_data["tokenized_text"].tolist()
         train_labels = train_data["Sentiment"].tolist()
 
-        val_sentences = val_data["Review"].tolist()
+        val_sentences = val_data["tokenized_text"].tolist()
         val_labels = val_data["Sentiment"].tolist()
 
-        test_sentences = test_data["Review"].tolist()
+        test_sentences = test_data["tokenized_text"].tolist()
         test_labels = test_data["Sentiment"].tolist()
+
+        # Log dataset sizes
+        logging.info(f"Train set size: {len(train_sentences)}")
+        logging.info(f"Validation set size: {len(val_sentences)}")
+        logging.info(f"Test set size: {len(test_sentences)}")
 
         return (
             (train_sentences, train_labels),
-            (
-                val_sentences,
-                val_labels,
-            ),
+            (val_sentences, val_labels),
             (test_sentences, test_labels),
         )
 
@@ -210,9 +235,6 @@ class CNNBertHybridTrainer:
         attention_masks = torch.cat(attention_masks, dim=0).to(device)
         labels = torch.tensor(labels).to(device)
         sent_index = torch.tensor(sent_index).to(device)
-
-        logging.info("Original: ", sentences[0])
-        logging.info("Token IDs:", input_ids[0])
 
         # Sentence index, token ids, attention masks, and labels
         return sent_index, input_ids, attention_masks, labels
@@ -409,19 +431,19 @@ if __name__ == "__main__":
         "vinai/phobert-base-v2",
     )
 
+    freeze_bert = True
     trainer = CNNBertHybridTrainer(
         bert_model=bert_model,
         data_path=args.data_path,
+        freeze_bert=freeze_bert,
     )
 
-    (X_train, y_train), (X_val, y_val), (X_test, y_test) = trainer._prepare_data()
-
-    # Create sentences and labels
+    # Get data splits
     (
         (train_sentences, train_labels),
         (val_sentences, val_labels),
         (test_sentences, test_labels),
-    ) = trainer._split_sentences_and_labels()
+    ) = trainer._prepare_data()
 
     # Create indexs, ids and masks
     (
@@ -465,8 +487,27 @@ if __name__ == "__main__":
 
     cnn = CNN(EMBEDDING_DIM, N_FILTERS, FILTER_SIZES, OUTPUT_DIM, DROPOUT, PAD_IDX)
 
-    model_parameters = list(trainer.bert_model.parameters()) + list(cnn.parameters())
-    optimizer = torch.optim.Adam(model_parameters, lr=1e-3)
+    # Configure optimizer with different learning rates if BERT is not frozen
+    if not freeze_bert:
+        # Use different learning rates for BERT and CNN
+        bert_params = list(trainer.bert_model.parameters())
+        cnn_params = list(cnn.parameters())
+
+        optimizer = torch.optim.AdamW(
+            [
+                {"params": bert_params, "lr": 2e-5},  # Lower learning rate for BERT
+                {"params": cnn_params, "lr": 1e-3},  # Higher learning rate for CNN
+            ],
+            weight_decay=1e-5,
+        )
+
+        logging.info("Using different learning rates: BERT=2e-5, CNN=1e-3")
+    else:
+        # Only CNN parameters are trainable
+        optimizer = torch.optim.Adam(cnn.parameters(), lr=1e-3)
+
+        logging.info("Using single learning rate for CNN: 1e-3")
+
     criterion = nn.CrossEntropyLoss()
 
     weighted_f1_score = trainer.training_loop(
