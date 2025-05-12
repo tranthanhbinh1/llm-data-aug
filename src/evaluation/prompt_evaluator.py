@@ -15,7 +15,7 @@ import torch
 from loguru import logger
 from sentence_transformers import SentenceTransformer
 
-from ..constants import NUM_REPHRASED_SENTENCES
+from ..constants import LABEL_MAPPING, NUM_REPHRASED_SENTENCES
 from synthesizer.generator import DataGenerator
 from synthesizer.models import (
     AugmentedUserReviews,
@@ -44,9 +44,8 @@ class PromptEvaluator:
         sentiment: Literal["neutral", "negative"],
         test_size: float = 0.05,
     ) -> pd.DataFrame:
-        label_mapping = {"Positive": 1, "Neutral": 2, "Negative": 0}
         data = self._original_data.copy()
-        data["Sentiment"] = data["Sentiment"].map(label_mapping)
+        data["Sentiment"] = data["Sentiment"].map(LABEL_MAPPING)
 
         # Filter first, then sample
         subset = data[data["Sentiment"] == DataGenerator.SENTIMENT_MAPPING[sentiment]]

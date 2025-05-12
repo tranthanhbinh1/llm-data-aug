@@ -7,6 +7,8 @@ from openai.types.chat.chat_completion_message_param import (
 )
 from openai import OpenAI
 from pydantic import BaseModel
+
+from src.constants import LABEL_MAPPING
 from .models import AugmentedUserReviews, SentimentPrompt, UserReviews
 from dotenv import load_dotenv
 import os
@@ -65,10 +67,8 @@ class DataGenerator:
         num_examples: int = 5,
     ) -> list[ChatCompletionUserMessageParam]:
         """Get examples from the original dataset for each LLM call"""
-        label_mapping = {"Positive": 1, "Neutral": 2, "Negative": 0}
-
-        data = pd.read_csv("data/cleaned_user_reviews.csv")
-        data["Sentiment"] = data["Sentiment"].map(label_mapping)
+        data = pd.read_csv(os.path.join(cls.DATA_PATH, "cleaned_user_reviews.csv"))
+        data["Sentiment"] = data["Sentiment"].map(LABEL_MAPPING)
         review_examples = (
             data[["Review", "Sentiment"]]
             .query(f"Sentiment == {cls.SENTIMENT_MAPPING[sentiment]}")
