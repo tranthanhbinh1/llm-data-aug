@@ -15,6 +15,10 @@ from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 from tqdm import tqdm
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader, RandomSampler, TensorDataset
+import argparse
+import os
+
+from src.constants import DATA_PATH
 
 
 class CNN(nn.Module):
@@ -218,7 +222,7 @@ class CNNBertHybridTrainer:
         inputs_ids: torch.Tensor,
         attention_masks: torch.Tensor,
         encoded_label_tensors: torch.Tensor,
-        batch_size: int,
+        batch_size: int = 128,
     ):
         train_dataset = TensorDataset(
             inputs_ids, attention_masks, encoded_label_tensors
@@ -326,7 +330,9 @@ class CNNBertHybridTrainer:
 
         logging.info(classification_report(all_pred_labels, all_true_labels))
         avg_val_accuracy = accuracy_score(all_pred_labels, all_true_labels)
-        macro_f1_score = f1_score(all_pred_labels, all_true_labels, average="macro")
+        weighted_f1_score = f1_score(
+            all_pred_labels, all_true_labels, average="weighted"
+        )
 
         avg_val_loss = epoch_loss / len(val_data_loader)
 
@@ -335,7 +341,7 @@ class CNNBertHybridTrainer:
         return (
             avg_val_loss,
             avg_val_accuracy,
-            macro_f1_score,
+            weighted_f1_score,
         )
 
     @staticmethod
@@ -354,21 +360,21 @@ class CNNBertHybridTrainer:
         val_data_loader: DataLoader,
         epochs: int = 10,
     ):
-        best_macro_f1 = float("0")
+        best_weighted_f1 = float("0")
 
         for epoch in range(epochs):
             start_time = time.time()
             train_loss, train_acc = self.train(
                 cnn_model, train_data_loader, optimizer, criterion
             )
-            valid_loss, valid_acc, macro_f1 = self.eval(
+            valid_loss, valid_acc, weighted_f1 = self.eval(
                 cnn_model, val_data_loader, criterion
             )
             end_time = time.time()
 
-            # if macro_f1 > best_macro_f1:
-            #     best_macro_f1 = macro_f1
-            #     torch.save(cnn_model.state_dict(), "best_model.pth")
+            if weighted_f1 > best_weighted_f1:
+                best_weighted_f1 = weighted_f1
+                # torch.save(cnn_model.state_dict(), "best_model.pth")
 
             epoch_mins, epoch_secs = self.epoch_time(start_time, end_time)
 
@@ -380,13 +386,24 @@ class CNNBertHybridTrainer:
             )
 
             logging.info(
-                f"Valid Loss: {valid_loss:.3f} | Valid Acc: {valid_acc * 100:.2f}% | Macro F1: {macro_f1:.3f}"
+                f"Valid Loss: {valid_loss:.3f} | Valid Acc: {valid_acc * 100:.2f}% | Weighted F1: {weighted_f1:.3f}"
             )
 
-        return best_macro_f1
+        return best_weighted_f1
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--data_path",
+        type=str,
+        default=os.path.join(
+            DATA_PATH,
+            "llm_generated/gemini-2.0-flash/auggpt_upsampled_user_reviews_cleaned.csv",
+        ),
+    )
+    args = parser.parse_args()
+
     # Initialize BERT with output_hidden_states=True
     bert_model = AutoModel.from_pretrained(
         "vinai/phobert-base-v2",
@@ -394,7 +411,7 @@ if __name__ == "__main__":
 
     trainer = CNNBertHybridTrainer(
         bert_model=bert_model,
-        data_path="/home/tb24/projects/llm-data-aug/data/llm_generated/gemini-2.0-flash/auggpt_upsampled_user_reviews_cleaned.csv",
+        data_path=args.data_path,
     )
 
     (X_train, y_train), (X_val, y_val), (X_test, y_test) = trainer._prepare_data()
@@ -449,15 +466,16 @@ if __name__ == "__main__":
     cnn = CNN(EMBEDDING_DIM, N_FILTERS, FILTER_SIZES, OUTPUT_DIM, DROPOUT, PAD_IDX)
 
     model_parameters = list(trainer.bert_model.parameters()) + list(cnn.parameters())
-    optimizer = torch.optim.Adam(model_parameters, lr=0.0001)
+    optimizer = torch.optim.Adam(model_parameters, lr=1e-3)
     criterion = nn.CrossEntropyLoss()
 
-    trainer.training_loop(
+    weighted_f1_score = trainer.training_loop(
         cnn,
         train_data_loader,
         optimizer,
         criterion,
         val_data_loader,
+        epochs=10,
     )
 
-    # TODO: implement argparse and print out the F1 Score only
+    print(weighted_f1_score)

@@ -1,6 +1,5 @@
 from datetime import datetime
 import os
-from typing import Optional, List, Dict
 import pandas as pd
 from sklearn.metrics import classification_report, f1_score, accuracy_score
 import torch
@@ -13,10 +12,6 @@ from sklearn.preprocessing import LabelEncoder
 from tqdm import tqdm
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader, TensorDataset
-from torch.nn.utils.rnn import pad_sequence
-import re
-from collections import Counter
-from typing import Optional
 from transformers import AutoTokenizer, AutoModel
 from src.utils import (
     normalize_repeated_words,
@@ -26,8 +21,8 @@ from src.utils import (
     tokenize_text,
     abbr,
 )
-
-from src.constants import DATA_PATH, LABEL_MAPPING, ORIGINAL_DATASET_PATH, PROJECT_ROOT
+from src.constants import DATA_PATH, LABEL_MAPPING, PROJECT_ROOT
+import argparse
 
 
 class BERTLSTMModel(nn.Module):
@@ -365,15 +360,29 @@ class BERTLSTMTrainer:
             criterion, test_loader
         )
 
+        weighted_f1_score = f1_score(test_labels, test_preds, average="weighted")
+
         logging.info(f"Test accuracy: {test_acc:.4f}")
         logging.info(f"Test loss: {test_loss:.4f}")
         logging.info(f"Predictions per class: {pred_counts}")
+        logging.info(f"F1 Score: {weighted_f1_score:.4f}")
         logging.info("\n" + str(classification_report(test_labels, test_preds)))
 
-        return test_acc
+        return weighted_f1_score
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--data_path",
+        type=str,
+        default=os.path.join(
+            DATA_PATH,
+            "llm_generated/gemini-2.0-flash/auggpt_upsampled_user_reviews_cleaned.csv",
+        ),
+    )
+    args = parser.parse_args()
+
     # Configuration
     bert_model_name = "vinai/phobert-base-v2"
     hidden_dim1 = 128
@@ -416,7 +425,7 @@ if __name__ == "__main__":
     train_dataset, val_dataset, test_dataset = trainer.load_data()
 
     # Create data loaders
-    batch_size = 32  # Smaller batch size due to BERT memory requirements
+    batch_size = 128
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
@@ -473,4 +482,6 @@ if __name__ == "__main__":
     )
 
     # Final evaluation
-    test_acc = trainer.final_evaluate(test_loader)
+    weighted_f1_score = trainer.final_evaluate(test_loader)
+
+    print(weighted_f1_score)
