@@ -29,6 +29,7 @@ from ..utils import get_instructor_instance
 from ..constants import ORIGINAL_DATASET_PATH
 
 
+#TODO: Major ovehaul needed to properly implement promptimal and downstream eval suite
 class PromptEvaluator:
     def __init__(
         self,

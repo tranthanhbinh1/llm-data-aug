@@ -102,7 +102,9 @@ class CNNBertHybridTrainer:
         bert_model,
         data_path: str,
         tokenizer: PreTrainedTokenizer
-        | PreTrainedTokenizerFast = AutoTokenizer.from_pretrained("vinai/phobert-base"),
+        | PreTrainedTokenizerFast = AutoTokenizer.from_pretrained(
+            "vinai/phobert-base-v2"
+        ),
         device: torch.device = torch.device(
             "cuda" if torch.cuda.is_available() else "cpu"
         ),
