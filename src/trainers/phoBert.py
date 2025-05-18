@@ -11,12 +11,23 @@ from loguru import logger
 import torch
 from tqdm import tqdm
 import os
-from src.utils import save_classification_report
+from src.utils import TextProcessor, save_classification_report
 import pickle
 import joblib
+from src.utils import (
+    normalize_repeated_words,
+    remove_non_alphanumeric,
+    remove_special_characters,
+    expand_abbr,
+    tokenize_text,
+    abbr,
+)
+from sklearn.model_selection import train_test_split
+from src.abstract.trainer import BaseTrainer
+from loguru import logger as logging
 
 
-class PhoBertTrainer:
+class PhoBertTrainer(BaseTrainer):
     """
     Trainer for PhoBert model. Only use PhoBERT v2.
     """
@@ -24,15 +35,61 @@ class PhoBertTrainer:
     def __init__(
         self,
         model,
+        data_path: str,
         tokenizer: PreTrainedTokenizer | PreTrainedTokenizerFast,
         device: torch.device,
+        preprocessor: TextProcessor,
     ):
         self.model = model
         self.tokenizer = tokenizer
         self.device = device
+        self.data = pd.read_csv(data_path)
+        self.preprocessor = TextProcessor(self.data)
+
+    def _words_processing(self):
+        # Apply preprocessing functions to the 'review' column
+        self.data["Review"] = self.data["Review"].apply(
+            str.lower
+        )  # Chuyển đổi văn bản thành chữ thường trước khi xử lý
+        self.data["Review"] = self.data["Review"].apply(remove_non_alphanumeric)
+        self.data["Review"] = self.data["Review"].apply(lambda x: expand_abbr(x, abbr))
+        self.data["Review"] = self.data["Review"].apply(remove_special_characters)
+        self.data["Review"] = self.data["Review"].apply(normalize_repeated_words)
+        self.data["tokenized_text"] = self.data["Review"].apply(tokenize_text)
+
+    def _prepare_data(self):
+        self._words_processing()
+        # Split data into train, validation and test sets
+        train_data, test_data = train_test_split(
+            self.data, test_size=0.2, random_state=self.SEED
+        )
+        train_data, val_data = train_test_split(
+            train_data, test_size=0.2, random_state=self.SEED
+        )
+
+        # Extract sentences and labels
+        train_sentences = train_data["tokenized_text"].tolist()
+        train_labels = train_data["Sentiment"].tolist()
+
+        val_sentences = val_data["tokenized_text"].tolist()
+        val_labels = val_data["Sentiment"].tolist()
+
+        test_sentences = test_data["tokenized_text"].tolist()
+        test_labels = test_data["Sentiment"].tolist()
+
+        # Log dataset sizes
+        logging.info(f"Train set size: {len(train_sentences)}")
+        logging.info(f"Validation set size: {len(val_sentences)}")
+        logging.info(f"Test set size: {len(test_sentences)}")
+
+        return (
+            (train_sentences, train_labels),
+            (val_sentences, val_labels),
+            (test_sentences, test_labels),
+        )
 
     @staticmethod
-    def _load_data(train_data_path: str, val_data_path: str, test_data_path: str):
+    def load_data(train_data_path: str, val_data_path: str, test_data_path: str):
         train_data = pd.read_csv(train_data_path)
         val_data = pd.read_csv(val_data_path)
         test_data = pd.read_csv(test_data_path)
@@ -215,7 +272,7 @@ class PhoBertTrainer:
         optimizer: Optimizer,
         scenario: str,
     ):
-        train_tuple, val_tuple, test_tuple = self._load_data(
+        train_tuple, val_tuple, test_tuple = self.load_data(
             "data/train.csv", "data/val.csv", "data/test.csv"
         )
 

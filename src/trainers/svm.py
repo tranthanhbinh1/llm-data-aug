@@ -15,14 +15,6 @@ from sklearn.preprocessing import LabelEncoder
 import argparse
 
 from src.constants import DATA_PATH
-from src.utils import (
-    expand_abbr,
-    remove_non_alphanumeric,
-    remove_special_characters,
-    normalize_repeated_words,
-    tokenize_text,
-    abbr,
-)
 
 
 class SVMTrainer:
@@ -53,14 +45,6 @@ class SVMTrainer:
         random.seed(self.SEED)
         np.random.seed(self.SEED)
 
-    def _words_processing(self):
-        self.data["Review"] = self.data["Review"].apply(str.lower)
-        self.data["Review"] = self.data["Review"].apply(remove_non_alphanumeric)
-        self.data["Review"] = self.data["Review"].apply(lambda x: expand_abbr(x, abbr))
-        self.data["Review"] = self.data["Review"].apply(remove_special_characters)
-        self.data["Review"] = self.data["Review"].apply(normalize_repeated_words)
-        self.data["tokenized_text"] = self.data["Review"].apply(tokenize_text)
-
     def _prepare_data(self):
         # First split the data
         train_data, val_data = train_test_split(
@@ -87,7 +71,7 @@ class SVMTrainer:
         return (X_train, y_train), (X_val, y_val)
 
     def load_data(self):
-        self._words_processing()
+        # self._words_processing()
         return self._prepare_data()
 
     def train(self, X_train, y_train, X_val, y_val):

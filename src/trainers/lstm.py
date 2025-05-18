@@ -13,14 +13,6 @@ from tqdm import tqdm
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader, TensorDataset
 from transformers import AutoTokenizer, AutoModel
-from src.utils import (
-    normalize_repeated_words,
-    remove_non_alphanumeric,
-    remove_special_characters,
-    expand_abbr,
-    tokenize_text,
-    abbr,
-)
 from src.constants import DATA_PATH, LABEL_MAPPING, PROJECT_ROOT
 import argparse
 
@@ -112,18 +104,8 @@ class BERTLSTMTrainer:
         torch.cuda.manual_seed(self.SEED)
         torch.backends.cudnn.deterministic = True
 
-    def _words_processing(self):
-        # Apply preprocessing functions to the 'review' column
-        self.data["Review"] = self.data["Review"].apply(
-            str.lower
-        )  # Chuyển đổi văn bản thành chữ thường trước khi xử lý
-        self.data["Review"] = self.data["Review"].apply(remove_non_alphanumeric)
-        self.data["Review"] = self.data["Review"].apply(lambda x: expand_abbr(x, abbr))
-        self.data["Review"] = self.data["Review"].apply(remove_special_characters)
-        self.data["Review"] = self.data["Review"].apply(normalize_repeated_words)
-        self.data["tokenized_text"] = self.data["Review"].apply(tokenize_text)
-
     def _prepare_data(self):
+        # self.data = self.preprocessor.preprocess()
         # Split the data
         train_data, test_data = train_test_split(
             self.data, test_size=0.2, random_state=self.SEED
@@ -179,7 +161,6 @@ class BERTLSTMTrainer:
         )
 
     def load_data(self):
-        self._words_processing()
         (train_encodings, y_train), (val_encodings, y_val), (test_encodings, y_test) = (
             self._prepare_data()
         )

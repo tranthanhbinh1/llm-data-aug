@@ -17,16 +17,9 @@ from torch.optim import Optimizer
 from torch.utils.data import DataLoader, RandomSampler, TensorDataset
 import argparse
 import os
-from src.utils import (
-    normalize_repeated_words,
-    remove_non_alphanumeric,
-    remove_special_characters,
-    expand_abbr,
-    tokenize_text,
-    abbr,
-)
-
 from src.constants import DATA_PATH
+from src.repositories.preprocessor import PreprocessorRepository
+from src.utils import epoch_time
 
 
 class CNN(nn.Module):
@@ -100,6 +93,7 @@ class CNNBertHybridTrainer:
     def __init__(
         self,
         bert_model,
+        preprocessor: PreprocessorRepository,
         data_path: str,
         tokenizer: PreTrainedTokenizer
         | PreTrainedTokenizerFast = AutoTokenizer.from_pretrained(
@@ -110,10 +104,11 @@ class CNNBertHybridTrainer:
         ),
         freeze_bert: bool = True,
     ):
+        self.data = pd.read_csv(data_path)
         self.bert_model = bert_model
         self.tokenizer = tokenizer
         self.device = device
-        self.data = pd.read_csv(data_path)
+        self.preprocessor = preprocessor
 
         # Move BERT to device
         self.bert_model.to(self.device)
@@ -142,19 +137,8 @@ class CNNBertHybridTrainer:
         torch.cuda.manual_seed(self.SEED)
         torch.backends.cudnn.deterministic = True
 
-    def _words_processing(self):
-        # Apply preprocessing functions to the 'review' column
-        self.data["Review"] = self.data["Review"].apply(
-            str.lower
-        )  # Chuyển đổi văn bản thành chữ thường trước khi xử lý
-        self.data["Review"] = self.data["Review"].apply(remove_non_alphanumeric)
-        self.data["Review"] = self.data["Review"].apply(lambda x: expand_abbr(x, abbr))
-        self.data["Review"] = self.data["Review"].apply(remove_special_characters)
-        self.data["Review"] = self.data["Review"].apply(normalize_repeated_words)
-        self.data["tokenized_text"] = self.data["Review"].apply(tokenize_text)
-
     def _prepare_data(self):
-        self._words_processing()
+        self.data = self.preprocessor.preprocess()
         # Split data into train, validation and test sets
         train_data, test_data = train_test_split(
             self.data, test_size=0.2, random_state=self.SEED
@@ -368,13 +352,6 @@ class CNNBertHybridTrainer:
             weighted_f1_score,
         )
 
-    @staticmethod
-    def epoch_time(start_time, end_time):
-        elapsed_time = end_time - start_time
-        elapsed_mins = int(elapsed_time / 60)
-        elapsed_secs = int(elapsed_time - (elapsed_mins * 60))
-        return elapsed_mins, elapsed_secs
-
     def training_loop(
         self,
         cnn_model: CNN,
@@ -400,7 +377,7 @@ class CNNBertHybridTrainer:
                 best_weighted_f1 = weighted_f1
                 # torch.save(cnn_model.state_dict(), "best_model.pth")
 
-            epoch_mins, epoch_secs = self.epoch_time(start_time, end_time)
+            epoch_mins, epoch_secs = epoch_time(start_time, end_time)
 
             logging.info(
                 f"Epoch: {epoch + 1:02} | Epoch Time: {epoch_mins}m {epoch_secs}s"
@@ -417,6 +394,8 @@ class CNNBertHybridTrainer:
 
 
 if __name__ == "__main__":
+    from src.preprocess.text_preprocessor import TextPreprocessor
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--data_path",
@@ -436,6 +415,7 @@ if __name__ == "__main__":
     freeze_bert = True
     trainer = CNNBertHybridTrainer(
         bert_model=bert_model,
+        preprocessor=TextPreprocessor(data=pd.read_csv(args.data_path)),
         data_path=args.data_path,
         freeze_bert=freeze_bert,
     )
