@@ -108,12 +108,13 @@ class CNNBertHybridTrainer(TrainerRepository):
         self.tokenizer = tokenizer
         self.device = device
         self.preprocessor = preprocessor
+        self.freeze_bert = freeze_bert
 
         # Move BERT to device
         self.bert_model.to(self.device)
 
         # Freeze BERT weights if specified
-        if freeze_bert:
+        if self.freeze_bert:
             for param in self.bert_model.parameters():
                 param.requires_grad = False
             logging.info("BERT model parameters frozen")
@@ -391,6 +392,98 @@ class CNNBertHybridTrainer(TrainerRepository):
 
         return best_weighted_f1
 
+    def _initialize_model(self):
+        """Initialize the CNN model with appropriate parameters"""
+        EMBEDDING_DIM = 768  # BERT's hidden size
+        N_FILTERS = 32
+        FILTER_SIZES = [1, 2, 3, 5]
+        OUTPUT_DIM = len(self.le.classes_)
+        DROPOUT = 0.1
+        PAD_IDX = self.tokenizer.pad_token_id
+
+        return CNN(EMBEDDING_DIM, N_FILTERS, FILTER_SIZES, OUTPUT_DIM, DROPOUT, PAD_IDX)
+
+    def _configure_optimizer(self, model):
+        """Configure the optimizer with appropriate learning rates"""
+        if not self.freeze_bert:
+            # Use different learning rates for BERT and CNN
+            bert_params = list(self.bert_model.parameters())
+            cnn_params = list(model.parameters())
+
+            optimizer = torch.optim.AdamW(
+                [
+                    {"params": bert_params, "lr": 2e-5},
+                    {"params": cnn_params, "lr": 1e-3},
+                ],
+                weight_decay=1e-5,
+            )
+            logging.info("Using different learning rates: BERT=2e-5, CNN=1e-3")
+        else:
+            # Only CNN parameters are trainable
+            optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+            logging.info("Using single learning rate for CNN: 1e-3")
+
+        return optimizer
+
+    def main(self, batch_size=128, epochs=10):
+        """
+        Run the complete training pipeline from data loading to evaluation
+        """
+        # Get data splits
+        (
+            (train_sentences, train_labels),
+            (val_sentences, val_labels),
+            (test_sentences, test_labels),
+        ) = self.load_data()
+
+        # Create indexes, ids and masks
+        (
+            train_sent_index,
+            train_input_ids,
+            train_attention_masks,
+            train_encoded_label_tensors,
+        ) = self.encode_tokenize(train_sentences, train_labels)
+
+        (
+            val_sent_index,
+            val_input_ids,
+            val_attention_masks,
+            val_encoded_label_tensors,
+        ) = self.encode_tokenize(val_sentences, val_labels)
+
+        # Create data loaders
+        train_data_loader = self._create_loaders(
+            train_input_ids,
+            train_attention_masks,
+            train_encoded_label_tensors,
+            batch_size,
+        )
+
+        val_data_loader = self._create_loaders(
+            val_input_ids, val_attention_masks, val_encoded_label_tensors, batch_size
+        )
+
+        # Initialize CNN model
+        cnn = self._initialize_model()
+
+        # Configure optimizer
+        optimizer = self._configure_optimizer(cnn)
+
+        # Define loss function
+        criterion = nn.CrossEntropyLoss()
+
+        # Run training loop
+        weighted_f1_score = self.training_loop(
+            cnn,
+            train_data_loader,
+            optimizer,
+            criterion,
+            val_data_loader,
+            epochs=epochs,
+        )
+
+        return weighted_f1_score
+
 
 if __name__ == "__main__":
     from src.preprocess.text_preprocessor import TextPreprocessor
@@ -422,85 +515,5 @@ if __name__ == "__main__":
         freeze_bert=freeze_bert,
     )
 
-    # Get data splits
-    (
-        (train_sentences, train_labels),
-        (val_sentences, val_labels),
-        (test_sentences, test_labels),
-    ) = trainer.load_data()
-
-    # Create indexs, ids and masks
-    (
-        train_sent_index,
-        train_input_ids,
-        train_attention_masks,
-        train_encoded_label_tensors,
-    ) = trainer.encode_tokenize(train_sentences, train_labels)
-    (
-        val_sent_index,
-        val_input_ids,
-        val_attention_masks,
-        val_encoded_label_tensors,
-    ) = trainer.encode_tokenize(val_sentences, val_labels)
-    (
-        test_sent_index,
-        test_input_ids,
-        test_attention_masks,
-        test_encoded_label_tensors,
-    ) = trainer.encode_tokenize(test_sentences, test_labels)
-
-    # Create loaders
-    train_data_loader = trainer._create_loaders(
-        train_input_ids, train_attention_masks, train_encoded_label_tensors, 128
-    )
-
-    test_data_loader = trainer._create_loaders(
-        test_input_ids, test_attention_masks, test_encoded_label_tensors, 128
-    )
-
-    val_data_loader = trainer._create_loaders(
-        val_input_ids, val_attention_masks, val_encoded_label_tensors, 128
-    )
-
-    EMBEDDING_DIM = 768  # BERT's hidden size
-    N_FILTERS = 32
-    FILTER_SIZES = [1, 2, 3, 5]
-    OUTPUT_DIM = len(trainer.le.classes_)
-    DROPOUT = 0.1
-    PAD_IDX = trainer.tokenizer.pad_token_id
-
-    cnn = CNN(EMBEDDING_DIM, N_FILTERS, FILTER_SIZES, OUTPUT_DIM, DROPOUT, PAD_IDX)
-
-    # Configure optimizer with different learning rates if BERT is not frozen
-    if not freeze_bert:
-        # Use different learning rates for BERT and CNN
-        bert_params = list(trainer.bert_model.parameters())
-        cnn_params = list(cnn.parameters())
-
-        optimizer = torch.optim.AdamW(
-            [
-                {"params": bert_params, "lr": 2e-5},  # Lower learning rate for BERT
-                {"params": cnn_params, "lr": 1e-3},  # Higher learning rate for CNN
-            ],
-            weight_decay=1e-5,
-        )
-
-        logging.info("Using different learning rates: BERT=2e-5, CNN=1e-3")
-    else:
-        # Only CNN parameters are trainable
-        optimizer = torch.optim.Adam(cnn.parameters(), lr=1e-3)
-
-        logging.info("Using single learning rate for CNN: 1e-3")
-
-    criterion = nn.CrossEntropyLoss()
-
-    weighted_f1_score = trainer.training_loop(
-        cnn,
-        train_data_loader,
-        optimizer,
-        criterion,
-        val_data_loader,
-        epochs=10,
-    )
-
+    weighted_f1_score = trainer.main()
     print(weighted_f1_score)

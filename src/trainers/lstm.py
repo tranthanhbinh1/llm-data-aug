@@ -16,6 +16,7 @@ from transformers import AutoTokenizer, AutoModel
 from src.constants import DATA_PATH, LABEL_MAPPING, PROJECT_ROOT, SEED
 import argparse
 
+from src.repositories.preprocessor import PreprocessorRepository
 from src.repositories.trainer import TrainerRepository
 
 
@@ -76,6 +77,7 @@ class BERTLSTMTrainer(TrainerRepository):
         self,
         model: BERTLSTMModel,
         data_path: str,
+        preprocessor: PreprocessorRepository,
         tokenizer_name: str = "vinai/phobert-base-v2",
         max_length: int = 128,
         device: torch.device = torch.device(
@@ -86,7 +88,7 @@ class BERTLSTMTrainer(TrainerRepository):
         self.model = model
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
         self.max_length = max_length
-
+        self.preprocessor = preprocessor
         # Load data
         self.data = pd.read_csv(data_path)
         initial_rows = len(self.data)
@@ -105,7 +107,7 @@ class BERTLSTMTrainer(TrainerRepository):
         torch.backends.cudnn.deterministic = True
 
     def _prepare_data(self):
-        # self.data = self.preprocessor.preprocess()
+        self.data = self.preprocessor.preprocess()
         # Split the data
         train_data, test_data = train_test_split(
             self.data, test_size=0.2, random_state=SEED
@@ -351,8 +353,91 @@ class BERTLSTMTrainer(TrainerRepository):
 
         return weighted_f1_score
 
+    def run_training(self, batch_size=128, epochs=10, patience=3):
+        """
+        Run the complete training pipeline from data loading to evaluation
+
+        Args:
+            batch_size: Size of batches for training
+            epochs: Number of training epochs
+            patience: Number of epochs to wait before early stopping
+
+        Returns:
+            float: Weighted F1 score from test set evaluation
+        """
+        # Load and prepare data
+        train_dataset, val_dataset, test_dataset = self.load_data()
+
+        # Create data loaders
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=batch_size,
+            shuffle=True,
+        )
+
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=batch_size,
+        )
+
+        test_loader = DataLoader(
+            test_dataset,
+            batch_size=batch_size,
+        )
+
+        # Setup training
+        criterion = nn.CrossEntropyLoss()
+
+        # Check if BERT is frozen
+        freeze_bert = not any(p.requires_grad for p in self.model.bert.parameters())
+
+        # Configure optimizer based on BERT freezing
+        if not freeze_bert:
+            # Parameters with different learning rates
+            bert_params = list(self.model.bert.parameters())
+            non_bert_params = (
+                list(self.model.lstm1.parameters())
+                + list(self.model.lstm2.parameters())
+                + list(self.model.dense1.parameters())
+                + list(self.model.dropout.parameters())
+                + list(self.model.dense2.parameters())
+            )
+
+            optimizer = torch.optim.AdamW(
+                [
+                    {"params": bert_params, "lr": 2e-5},  # Lower learning rate for BERT
+                    {
+                        "params": non_bert_params,
+                        "lr": 1e-3,
+                    },  # Higher learning rate for LSTM layers
+                ],
+                weight_decay=1e-5,
+            )
+        else:
+            # If BERT is frozen, use single learning rate for all trainable parameters
+            optimizer = torch.optim.AdamW(
+                self.model.parameters(), lr=1e-3, weight_decay=1e-5
+            )
+
+        # Train model
+        self.training_loop(
+            optimizer,
+            criterion,
+            train_loader,
+            val_loader,
+            epochs=epochs,
+            patience=patience,
+        )
+
+        # Final evaluation
+        weighted_f1_score = self.final_evaluate(test_loader)
+
+        return weighted_f1_score
+
 
 if __name__ == "__main__":
+    from src.preprocess import TextPreprocessor
+
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--data_path",
@@ -391,6 +476,8 @@ if __name__ == "__main__":
     logging.info(f"Trainable parameters: {trainable_params:,}")
     logging.info(f"BERT parameters frozen: {freeze_bert}")
 
+    preprocessor = TextPreprocessor(data=pd.read_csv(args.data_path))
+
     # Create trainer
     trainer = BERTLSTMTrainer(
         model=model,
@@ -400,69 +487,9 @@ if __name__ == "__main__":
         ),
         tokenizer_name=bert_model_name,
         max_length=128,
+        preprocessor=preprocessor,
     )
 
-    # Load and prepare data
-    train_dataset, val_dataset, test_dataset = trainer.load_data()
-
-    # Create data loaders
-    batch_size = 128
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-    )
-
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=batch_size,
-    )
-
-    test_loader = DataLoader(
-        test_dataset,
-        batch_size=batch_size,
-    )
-
-    # Setup training
-    criterion = nn.CrossEntropyLoss()
-
-    # Use different learning rates for BERT and LSTM parts if BERT is not frozen
-    if not freeze_bert:
-        # Parameters with different learning rates
-        bert_params = list(model.bert.parameters())
-        non_bert_params = (
-            list(model.lstm1.parameters())
-            + list(model.lstm2.parameters())
-            + list(model.dense1.parameters())
-            + list(model.dropout.parameters())
-            + list(model.dense2.parameters())
-        )
-
-        optimizer = torch.optim.AdamW(
-            [
-                {"params": bert_params, "lr": 2e-5},  # Lower learning rate for BERT
-                {
-                    "params": non_bert_params,
-                    "lr": 1e-3,
-                },  # Higher learning rate for LSTM layers
-            ],
-            weight_decay=1e-5,
-        )
-    else:
-        # If BERT is frozen, use single learning rate for all trainable parameters
-        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-5)
-
-    # Train model
-    trainer.training_loop(
-        optimizer,
-        criterion,
-        train_loader,
-        val_loader,
-        epochs=10,
-        patience=3,
-    )
-
-    # Final evaluation
-    weighted_f1_score = trainer.final_evaluate(test_loader)
-
-    print(weighted_f1_score)
+    # Run training pipeline
+    weighted_f1_score = trainer.run_training(batch_size=128, epochs=10, patience=3)
+    print(f"Final F1 score: {weighted_f1_score}")

@@ -95,10 +95,25 @@ class SVMTrainer(TrainerRepository):
         logging.info(f"Prediction distribution: {pred_counts}")
 
         logging.info("\n" + str(classification_report(y_val, y_pred_svc)))
-        f1 = f1_score(y_val, y_pred_svc, average="weighted")
-        logging.info(f"F1 Score: {f1:.4f}")
+        weighted_f1 = f1_score(y_val, y_pred_svc, average="weighted")
+        logging.info(f"F1 Score: {weighted_f1:.4f}")
 
-        return f1
+        return weighted_f1
+
+    def run_training(self):
+        """
+        Run the complete training pipeline from data loading to evaluation
+
+        Returns:
+            float: F1 score from validation
+        """
+        # Load and prepare data
+        (X_train, y_train), (X_val, y_val) = self.load_data()
+
+        # Train model and get F1 score
+        weighted_f1 = self.train(X_train, y_train, X_val, y_val)
+
+        return weighted_f1
 
 
 if __name__ == "__main__":
@@ -114,8 +129,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     svm_trainer = SVMTrainer(data_path=args.data_path)
+    weighted_f1 = svm_trainer.run_training()
 
-    (X_train, y_train), (X_val, y_val) = svm_trainer.load_data()
-    f1 = svm_trainer.train(X_train, y_train, X_val, y_val)
-
-    print(f1)
+    print(f"Final F1 score: {weighted_f1}")

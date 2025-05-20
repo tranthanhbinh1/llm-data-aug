@@ -1,9 +1,9 @@
 import numpy as np
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, f1_score
 from torch.optim import Optimizer
 from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
-from transformers import AutoModelForSequenceClassification
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
 from src.repositories.preprocessor import PreprocessorRepository
 from ..dataloaders.custom_dataset import CustomDataset
 from torch.utils.data import DataLoader
@@ -18,9 +18,11 @@ import joblib
 from sklearn.model_selection import train_test_split
 from src.repositories.trainer import TrainerRepository
 from loguru import logger as logging
-from src.constants import SEED
+from src.constants import SEED, DATA_PATH
+import argparse
 
 
+# TODO: needs fixing
 class PhoBertTrainer(TrainerRepository):
     """
     Trainer for PhoBert model. Only use PhoBERT v2.
@@ -30,9 +32,11 @@ class PhoBertTrainer(TrainerRepository):
         self,
         model,
         data_path: str,
-        tokenizer: PreTrainedTokenizer | PreTrainedTokenizerFast,
-        device: torch.device,
         preprocessor: PreprocessorRepository,
+        tokenizer: PreTrainedTokenizer | PreTrainedTokenizerFast,
+        device: torch.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu"
+        ),
     ):
         self.model = model
         self.tokenizer = tokenizer
@@ -71,24 +75,27 @@ class PhoBertTrainer(TrainerRepository):
             (test_sentences, test_labels),
         )
 
-    @staticmethod
-    def load_data(train_data_path: str, val_data_path: str, test_data_path: str):
-        train_data = pd.read_csv(train_data_path)
-        val_data = pd.read_csv(val_data_path)
-        test_data = pd.read_csv(test_data_path)
+    def load_data(self):
+        self.data = self.preprocessor.preprocess()
+        train_data, test_data = train_test_split(
+            self.data, test_size=0.2, random_state=SEED
+        )
+        train_data, val_data = train_test_split(
+            train_data, test_size=0.2, random_state=SEED
+        )
 
         # Detached the dataframes to train texts, lables, val texts, val labels, test texts, test labels
-        train_texts = train_data["text"].tolist()
-        train_labels = train_data["label"].tolist()
-        val_texts = val_data["text"].tolist()
-        val_labels = val_data["label"].tolist()
-        test_texts = test_data["text"].tolist()
-        test_labels = test_data["label"].tolist()
+        train_sentences = train_data["tokenized_text"].tolist()
+        train_labels = train_data["Sentiment"].tolist()
+        val_sentences = val_data["tokenized_text"].tolist()
+        val_labels = val_data["Sentiment"].tolist()
+        test_sentences = test_data["tokenized_text"].tolist()
+        test_labels = test_data["Sentiment"].tolist()
 
         return (
-            (train_texts, train_labels),
-            (val_texts, val_labels),
-            (test_texts, test_labels),
+            (train_sentences, train_labels),
+            (val_sentences, val_labels),
+            (test_sentences, test_labels),
         )
 
     def train(
@@ -100,15 +107,17 @@ class PhoBertTrainer(TrainerRepository):
         max_length: int,
         optimizer: Optimizer,
     ):
-        train_texts, train_labels = train_tuple
-        val_texts, val_labels = val_tuple
+        train_sentences, train_labels = train_tuple
+        val_sentences, val_labels = val_tuple
 
         train_dataset = CustomDataset(
-            train_texts, train_labels, self.tokenizer, max_length
+            train_sentences, train_labels, self.tokenizer, max_length
         )
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
-        val_dataset = CustomDataset(val_texts, val_labels, self.tokenizer, max_length)
+        val_dataset = CustomDataset(
+            val_sentences, val_labels, self.tokenizer, max_length
+        )
         val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
         self.model.to(self.device)
@@ -171,8 +180,6 @@ class PhoBertTrainer(TrainerRepository):
         test_tuple: tuple[list[str], list[str]],
         batch_size: int,
         max_length: int,
-        scenario: str,
-        project_root: str = os.getcwd(),
     ):
         """Perform evaluation on the test set"""
         test_texts, test_labels = test_tuple
@@ -212,10 +219,10 @@ class PhoBertTrainer(TrainerRepository):
         )
         logger.info(report)
 
-        # Save the classification report
-        save_classification_report(
-            true_labels, predictions, target_names, project_root, scenario
-        )
+        # TODO: Save the classification report
+
+        weighted_f1 = f1_score(true_labels, predictions, average="weighted")
+        return weighted_f1
 
     def save(self, project_root: str, scenario: str):
         pickle_path = os.path.join(
@@ -247,21 +254,52 @@ class PhoBertTrainer(TrainerRepository):
         model.to(device)
         return model
 
-    def run(
+    def main(
         self,
         epochs: int,
         batch_size: int,
         max_length: int,
         optimizer: Optimizer,
-        scenario: str,
     ):
-        train_tuple, val_tuple, test_tuple = self.load_data(
-            "data/train.csv", "data/val.csv", "data/test.csv"
-        )
+        train_tuple, val_tuple, test_tuple = self.load_data()
 
         self.train(train_tuple, val_tuple, epochs, batch_size, max_length, optimizer)
-        self.evaluate(test_tuple, batch_size, max_length, scenario)
+        self.evaluate(test_tuple, batch_size, max_length)
 
 
 if __name__ == "__main__":
+    from src.preprocess import TextPreprocessor
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--data_path",
+        type=str,
+        default=os.path.join(
+            DATA_PATH,
+            "llm_generated/gemini-2.0-flash/auggpt_upsampled_user_reviews_cleaned.csv",
+        ),
+    )
+    args = parser.parse_args()
+
+    preprocessor = TextPreprocessor(data=pd.read_csv(args.data_path))
+
+    model = AutoModelForSequenceClassification.from_pretrained("vinai/phobert-base-v2")
+    tokenizer = AutoTokenizer.from_pretrained("vinai/phobert-base-v2")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5)
+    trainer = PhoBertTrainer(
+        model=model,
+        data_path=args.data_path,
+        preprocessor=preprocessor,
+        tokenizer=tokenizer,
+        device=device,
+    )
+
+    trainer.main(
+        epochs=10,
+        batch_size=16,
+        max_length=128,
+        optimizer=optimizer,
+    )
+
+    # TODO: needs fixing
