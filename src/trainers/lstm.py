@@ -13,8 +13,10 @@ from tqdm import tqdm
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader, TensorDataset
 from transformers import AutoTokenizer, AutoModel
-from src.constants import DATA_PATH, LABEL_MAPPING, PROJECT_ROOT
+from src.constants import DATA_PATH, LABEL_MAPPING, PROJECT_ROOT, SEED
 import argparse
+
+from src.repositories.trainer import TrainerRepository
 
 
 class BERTLSTMModel(nn.Module):
@@ -69,9 +71,7 @@ class BERTLSTMModel(nn.Module):
         return x
 
 
-class BERTLSTMTrainer:
-    SEED = 42
-
+class BERTLSTMTrainer(TrainerRepository):
     def __init__(
         self,
         model: BERTLSTMModel,
@@ -98,20 +98,20 @@ class BERTLSTMTrainer:
             logging.warning(f"Removed {removed_rows} rows containing NaN values")
 
         # Set random seeds for reproducibility
-        random.seed(self.SEED)
-        np.random.seed(self.SEED)
-        torch.manual_seed(self.SEED)
-        torch.cuda.manual_seed(self.SEED)
+        random.seed(SEED)
+        np.random.seed(SEED)
+        torch.manual_seed(SEED)
+        torch.cuda.manual_seed(SEED)
         torch.backends.cudnn.deterministic = True
 
     def _prepare_data(self):
         # self.data = self.preprocessor.preprocess()
         # Split the data
         train_data, test_data = train_test_split(
-            self.data, test_size=0.2, random_state=self.SEED
+            self.data, test_size=0.2, random_state=SEED
         )
         train_data, val_data = train_test_split(
-            train_data, test_size=0.2, random_state=self.SEED
+            train_data, test_size=0.2, random_state=SEED
         )
 
         # Log dataset sizes

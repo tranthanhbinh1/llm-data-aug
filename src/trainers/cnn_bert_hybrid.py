@@ -17,9 +17,10 @@ from torch.optim import Optimizer
 from torch.utils.data import DataLoader, RandomSampler, TensorDataset
 import argparse
 import os
-from src.constants import DATA_PATH
+from src.constants import DATA_PATH, SEED
 from src.repositories.preprocessor import PreprocessorRepository
 from src.utils import epoch_time
+from src.repositories.trainer import TrainerRepository
 
 
 class CNN(nn.Module):
@@ -87,9 +88,7 @@ class CNN(nn.Module):
         return self.fc(cat)
 
 
-class CNNBertHybridTrainer:
-    SEED = 42
-
+class CNNBertHybridTrainer(TrainerRepository):
     def __init__(
         self,
         bert_model,
@@ -131,20 +130,20 @@ class CNNBertHybridTrainer:
         )
 
         # Set random seeds
-        random.seed(self.SEED)
-        np.random.seed(self.SEED)
-        torch.manual_seed(self.SEED)
-        torch.cuda.manual_seed(self.SEED)
+        random.seed(SEED)
+        np.random.seed(SEED)
+        torch.manual_seed(SEED)
+        torch.cuda.manual_seed(SEED)
         torch.backends.cudnn.deterministic = True
 
-    def _prepare_data(self):
+    def load_data(self):
         self.data = self.preprocessor.preprocess()
         # Split data into train, validation and test sets
         train_data, test_data = train_test_split(
-            self.data, test_size=0.2, random_state=self.SEED
+            self.data, test_size=0.2, random_state=SEED
         )
         train_data, val_data = train_test_split(
-            train_data, test_size=0.2, random_state=self.SEED
+            train_data, test_size=0.2, random_state=SEED
         )
 
         # Extract sentences and labels
@@ -413,9 +412,12 @@ if __name__ == "__main__":
     )
 
     freeze_bert = True
+
+    preprocessor = TextPreprocessor(data=pd.read_csv(args.data_path))
+
     trainer = CNNBertHybridTrainer(
         bert_model=bert_model,
-        preprocessor=TextPreprocessor(data=pd.read_csv(args.data_path)),
+        preprocessor=preprocessor,
         data_path=args.data_path,
         freeze_bert=freeze_bert,
     )
@@ -425,7 +427,7 @@ if __name__ == "__main__":
         (train_sentences, train_labels),
         (val_sentences, val_labels),
         (test_sentences, test_labels),
-    ) = trainer._prepare_data()
+    ) = trainer.load_data()
 
     # Create indexs, ids and masks
     (

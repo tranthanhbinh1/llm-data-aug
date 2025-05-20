@@ -10,6 +10,6 @@ class TrainerRepository(ABC):
     def train(self):
         raise NotImplementedError()
 
-    @abstractmethod
-    def evaluate(self):
-        raise NotImplementedError()
+    # @abstractmethod
+    # def evaluate(self):
+    #     raise NotImplementedError()

@@ -14,12 +14,11 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 import argparse
 
-from src.constants import DATA_PATH
+from src.constants import DATA_PATH, SEED
+from src.repositories.trainer import TrainerRepository
 
 
-class SVMTrainer:
-    SEED = 42
-
+class SVMTrainer(TrainerRepository):
     def __init__(
         self,
         data_path: str,
@@ -42,13 +41,13 @@ class SVMTrainer:
         if removed_rows > 0:
             logging.warning(f"Removed {removed_rows} rows containing NaN values")
 
-        random.seed(self.SEED)
-        np.random.seed(self.SEED)
+        random.seed(SEED)
+        np.random.seed(SEED)
 
     def _prepare_data(self):
         # First split the data
         train_data, val_data = train_test_split(
-            self.data, test_size=0.2, random_state=self.SEED
+            self.data, test_size=0.2, random_state=SEED
         )
 
         # Log dataset sizes

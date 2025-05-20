@@ -4,6 +4,7 @@ from torch.optim import Optimizer
 from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 from transformers import AutoModelForSequenceClassification
+from src.repositories.preprocessor import PreprocessorRepository
 from ..dataloaders.custom_dataset import CustomDataset
 from torch.utils.data import DataLoader
 import pandas as pd
@@ -11,23 +12,16 @@ from loguru import logger
 import torch
 from tqdm import tqdm
 import os
-from src.utils import TextProcessor, save_classification_report
+from src.utils import save_classification_report
 import pickle
 import joblib
-from src.utils import (
-    normalize_repeated_words,
-    remove_non_alphanumeric,
-    remove_special_characters,
-    expand_abbr,
-    tokenize_text,
-    abbr,
-)
 from sklearn.model_selection import train_test_split
-from src.abstract.trainer import BaseTrainer
+from src.repositories.trainer import TrainerRepository
 from loguru import logger as logging
+from src.constants import SEED
 
 
-class PhoBertTrainer(BaseTrainer):
+class PhoBertTrainer(TrainerRepository):
     """
     Trainer for PhoBert model. Only use PhoBERT v2.
     """
@@ -38,33 +32,22 @@ class PhoBertTrainer(BaseTrainer):
         data_path: str,
         tokenizer: PreTrainedTokenizer | PreTrainedTokenizerFast,
         device: torch.device,
-        preprocessor: TextProcessor,
+        preprocessor: PreprocessorRepository,
     ):
         self.model = model
         self.tokenizer = tokenizer
         self.device = device
         self.data = pd.read_csv(data_path)
-        self.preprocessor = TextProcessor(self.data)
-
-    def _words_processing(self):
-        # Apply preprocessing functions to the 'review' column
-        self.data["Review"] = self.data["Review"].apply(
-            str.lower
-        )  # Chuyển đổi văn bản thành chữ thường trước khi xử lý
-        self.data["Review"] = self.data["Review"].apply(remove_non_alphanumeric)
-        self.data["Review"] = self.data["Review"].apply(lambda x: expand_abbr(x, abbr))
-        self.data["Review"] = self.data["Review"].apply(remove_special_characters)
-        self.data["Review"] = self.data["Review"].apply(normalize_repeated_words)
-        self.data["tokenized_text"] = self.data["Review"].apply(tokenize_text)
+        self.preprocessor = preprocessor
 
     def _prepare_data(self):
-        self._words_processing()
+        self.data = self.preprocessor.preprocess()
         # Split data into train, validation and test sets
         train_data, test_data = train_test_split(
-            self.data, test_size=0.2, random_state=self.SEED
+            self.data, test_size=0.2, random_state=SEED
         )
         train_data, val_data = train_test_split(
-            train_data, test_size=0.2, random_state=self.SEED
+            train_data, test_size=0.2, random_state=SEED
         )
 
         # Extract sentences and labels
