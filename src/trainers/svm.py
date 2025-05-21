@@ -131,4 +131,4 @@ if __name__ == "__main__":
     svm_trainer = SVMTrainer(data_path=args.data_path)
     weighted_f1 = svm_trainer.run_training()
 
-    print(f"Final F1 score: {weighted_f1}")
+    print(weighted_f1)

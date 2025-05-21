@@ -338,8 +338,8 @@ class CNNBertHybridTrainer(TrainerRepository):
 
         logging.info(classification_report(all_pred_labels, all_true_labels))
         avg_val_accuracy = accuracy_score(all_pred_labels, all_true_labels)
-        weighted_f1_score = f1_score(
-            all_pred_labels, all_true_labels, average="weighted"
+        weighted_f1 = float(
+            f1_score(all_pred_labels, all_true_labels, average="weighted")
         )
 
         avg_val_loss = epoch_loss / len(val_data_loader)
@@ -349,7 +349,7 @@ class CNNBertHybridTrainer(TrainerRepository):
         return (
             avg_val_loss,
             avg_val_accuracy,
-            weighted_f1_score,
+            weighted_f1,
         )
 
     def training_loop(
@@ -361,27 +361,14 @@ class CNNBertHybridTrainer(TrainerRepository):
         val_data_loader: DataLoader,
         epochs: int = 10,
     ):
-        best_weighted_f1 = float("0")
-
-        for epoch in range(epochs):
-            start_time = time.time()
+        for _ in range(epochs):
             train_loss, train_acc = self.train(
                 cnn_model, train_data_loader, optimizer, criterion
             )
             valid_loss, valid_acc, weighted_f1 = self.eval(
                 cnn_model, val_data_loader, criterion
             )
-            end_time = time.time()
 
-            if weighted_f1 > best_weighted_f1:
-                best_weighted_f1 = weighted_f1
-                # torch.save(cnn_model.state_dict(), "best_model.pth")
-
-            epoch_mins, epoch_secs = epoch_time(start_time, end_time)
-
-            logging.info(
-                f"Epoch: {epoch + 1:02} | Epoch Time: {epoch_mins}m {epoch_secs}s"
-            )
             logging.info(
                 f"Train Loss: {train_loss:.3f} | Train Acc: {train_acc * 100:.2f}%"
             )
@@ -390,7 +377,7 @@ class CNNBertHybridTrainer(TrainerRepository):
                 f"Valid Loss: {valid_loss:.3f} | Valid Acc: {valid_acc * 100:.2f}% | Weighted F1: {weighted_f1:.3f}"
             )
 
-        return best_weighted_f1
+        return weighted_f1
 
     def _initialize_model(self):
         """Initialize the CNN model with appropriate parameters"""

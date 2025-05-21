@@ -12,17 +12,15 @@ from loguru import logger
 import torch
 from tqdm import tqdm
 import os
-from src.utils import save_classification_report
-import pickle
-import joblib
+
+# from src.utils import save_classification_report
 from sklearn.model_selection import train_test_split
 from src.repositories.trainer import TrainerRepository
-from loguru import logger as logging
 from src.constants import SEED, DATA_PATH
 import argparse
+from typing import Tuple, List
 
 
-# TODO: needs fixing
 class PhoBertTrainer(TrainerRepository):
     """
     Trainer for PhoBert model. Only use PhoBERT v2.
@@ -44,9 +42,17 @@ class PhoBertTrainer(TrainerRepository):
         self.data = pd.read_csv(data_path)
         self.preprocessor = preprocessor
 
-    def _prepare_data(self):
+    def load_data(
+        self,
+    ) -> Tuple[
+        Tuple[List[str], List[int]],
+        Tuple[List[str], List[int]],
+        Tuple[List[str], List[int]],
+    ]:
+        """
+        Load and preprocess data, split into train, validation and test sets
+        """
         self.data = self.preprocessor.preprocess()
-        # Split data into train, validation and test sets
         train_data, test_data = train_test_split(
             self.data, test_size=0.2, random_state=SEED
         )
@@ -65,32 +71,9 @@ class PhoBertTrainer(TrainerRepository):
         test_labels = test_data["Sentiment"].tolist()
 
         # Log dataset sizes
-        logging.info(f"Train set size: {len(train_sentences)}")
-        logging.info(f"Validation set size: {len(val_sentences)}")
-        logging.info(f"Test set size: {len(test_sentences)}")
-
-        return (
-            (train_sentences, train_labels),
-            (val_sentences, val_labels),
-            (test_sentences, test_labels),
-        )
-
-    def load_data(self):
-        self.data = self.preprocessor.preprocess()
-        train_data, test_data = train_test_split(
-            self.data, test_size=0.2, random_state=SEED
-        )
-        train_data, val_data = train_test_split(
-            train_data, test_size=0.2, random_state=SEED
-        )
-
-        # Detached the dataframes to train texts, lables, val texts, val labels, test texts, test labels
-        train_sentences = train_data["tokenized_text"].tolist()
-        train_labels = train_data["Sentiment"].tolist()
-        val_sentences = val_data["tokenized_text"].tolist()
-        val_labels = val_data["Sentiment"].tolist()
-        test_sentences = test_data["tokenized_text"].tolist()
-        test_labels = test_data["Sentiment"].tolist()
+        logger.info(f"Train set size: {len(train_sentences)}")
+        logger.info(f"Validation set size: {len(val_sentences)}")
+        logger.info(f"Test set size: {len(test_sentences)}")
 
         return (
             (train_sentences, train_labels),
@@ -100,13 +83,13 @@ class PhoBertTrainer(TrainerRepository):
 
     def train(
         self,
-        train_tuple: tuple[list[str], list[str]],
-        val_tuple: tuple[list[str], list[str]],
+        train_tuple: Tuple[List[str], List[int]],
+        val_tuple: Tuple[List[str], List[int]],
         epochs: int,
         batch_size: int,
         max_length: int,
         optimizer: Optimizer,
-    ):
+    ) -> None:
         train_sentences, train_labels = train_tuple
         val_sentences, val_labels = val_tuple
 
@@ -175,12 +158,13 @@ class PhoBertTrainer(TrainerRepository):
                 f"Epoch {epoch + 1}: Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, Val Accuracy: {val_accuracy:.4f}"
             )
 
+    @torch.no_grad()
     def evaluate(
         self,
-        test_tuple: tuple[list[str], list[str]],
+        test_tuple: Tuple[List[str], List[int]],
         batch_size: int,
         max_length: int,
-    ):
+    ) -> float:
         """Perform evaluation on the test set"""
         test_texts, test_labels = test_tuple
 
@@ -193,20 +177,19 @@ class PhoBertTrainer(TrainerRepository):
         predictions = []
         true_labels = []
 
-        with torch.no_grad():
-            for batch in test_loader:
-                input_ids = batch["input_ids"].to(self.device)
-                attention_mask = batch["attention_mask"].to(self.device)
-                labels = batch["labels"].to(self.device)
+        for batch in test_loader:
+            input_ids = batch["input_ids"].to(self.device)
+            attention_mask = batch["attention_mask"].to(self.device)
+            labels = batch["labels"].to(self.device)
 
-                outputs = self.model(
-                    input_ids=input_ids, attention_mask=attention_mask, labels=labels
-                )
-                logits = outputs.logits
+            outputs = self.model(
+                input_ids=input_ids, attention_mask=attention_mask, labels=labels
+            )
+            logits = outputs.logits
 
-                _, predicted = torch.max(logits, 1)
-                predictions.extend(predicted.cpu().numpy())
-                true_labels.extend(labels.cpu().numpy())
+            _, predicted = torch.max(logits, 1)
+            predictions.extend(predicted.cpu().numpy())
+            true_labels.extend(labels.cpu().numpy())
 
         # Convert predictions and true labels to numpy arrays
         predictions = np.array(predictions)
@@ -219,30 +202,8 @@ class PhoBertTrainer(TrainerRepository):
         )
         logger.info(report)
 
-        # TODO: Save the classification report
-
-        weighted_f1 = f1_score(true_labels, predictions, average="weighted")
+        weighted_f1 = float(f1_score(true_labels, predictions, average="weighted"))
         return weighted_f1
-
-    def save(self, project_root: str, scenario: str):
-        pickle_path = os.path.join(
-            project_root, "models", f"{scenario.lower()}_phobert_pickle.pkl"
-        )
-        with open(pickle_path, "wb") as file:
-            pickle.dump(self.model, file)
-
-        joblib_path = os.path.join(
-            project_root, "models", f"{scenario.lower()}_phobert_joblib.pkl"
-        )
-        joblib.dump(self.model, joblib_path)
-
-        self.model.save_pretrained(
-            os.path.join(
-                project_root, "models", f"{scenario.lower()}_phobert_fine_tuned"
-            )
-        )
-
-        logger.info(f"Model saved to {pickle_path} and {joblib_path}")
 
     @staticmethod
     def load(project_root: str, scenario: str, device: torch.device):
@@ -260,11 +221,12 @@ class PhoBertTrainer(TrainerRepository):
         batch_size: int,
         max_length: int,
         optimizer: Optimizer,
-    ):
+    ) -> float:
         train_tuple, val_tuple, test_tuple = self.load_data()
 
         self.train(train_tuple, val_tuple, epochs, batch_size, max_length, optimizer)
-        self.evaluate(test_tuple, batch_size, max_length)
+        weighted_f1 = self.evaluate(test_tuple, batch_size, max_length)
+        return weighted_f1
 
 
 if __name__ == "__main__":
@@ -283,7 +245,9 @@ if __name__ == "__main__":
 
     preprocessor = TextPreprocessor(data=pd.read_csv(args.data_path))
 
-    model = AutoModelForSequenceClassification.from_pretrained("vinai/phobert-base-v2")
+    model = AutoModelForSequenceClassification.from_pretrained(
+        "vinai/phobert-base-v2", num_labels=3
+    )
     tokenizer = AutoTokenizer.from_pretrained("vinai/phobert-base-v2")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5)
@@ -295,11 +259,10 @@ if __name__ == "__main__":
         device=device,
     )
 
-    trainer.main(
-        epochs=10,
-        batch_size=16,
+    weighted_f1 = trainer.main(
+        epochs=5,
+        batch_size=16 * 6,
         max_length=128,
         optimizer=optimizer,
     )
-
-    # TODO: needs fixing
+    print(weighted_f1)
