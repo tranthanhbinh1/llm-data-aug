@@ -8,7 +8,7 @@ from src.repositories.preprocessor import PreprocessorRepository
 from ..dataloaders.custom_dataset import CustomDataset
 from torch.utils.data import DataLoader
 import pandas as pd
-from loguru import logger
+from loguru import logger as logging
 import torch
 from tqdm import tqdm
 import os
@@ -71,9 +71,9 @@ class PhoBertTrainer(TrainerRepository):
         test_labels = test_data["Sentiment"].tolist()
 
         # Log dataset sizes
-        logger.info(f"Train set size: {len(train_sentences)}")
-        logger.info(f"Validation set size: {len(val_sentences)}")
-        logger.info(f"Test set size: {len(test_sentences)}")
+        logging.info(f"Train set size: {len(train_sentences)}")
+        logging.info(f"Validation set size: {len(val_sentences)}")
+        logging.info(f"Test set size: {len(test_sentences)}")
 
         return (
             (train_sentences, train_labels),
@@ -154,7 +154,7 @@ class PhoBertTrainer(TrainerRepository):
             avg_val_loss = val_loss / len(val_loader)
             val_accuracy = correct_predictions / total_predictions
 
-            logger.info(
+            logging.info(
                 f"Epoch {epoch + 1}: Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, Val Accuracy: {val_accuracy:.4f}"
             )
 
@@ -200,7 +200,7 @@ class PhoBertTrainer(TrainerRepository):
         report = classification_report(
             true_labels, predictions, target_names=target_names
         )
-        logger.info(report)
+        logging.info(report)
 
         weighted_f1 = float(f1_score(true_labels, predictions, average="weighted"))
         return weighted_f1

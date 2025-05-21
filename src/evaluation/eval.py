@@ -11,6 +11,3 @@ from torch import nn
 class Evaluator:
     def __init__(self, trainer: TrainerRepository):
         self.trainer = trainer
-
-    def evaluate(self, model: nn.Module, test_loader: DataLoader) -> float:
-        pass
