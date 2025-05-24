@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 import argparse
 
-from src.synthesizer.runner import AugGptRunner
+from src.synthesizer.aug_gpt_generator import AugGptRunner
 from src.utils import get_instructor_instance
 from src.evaluation.similarity_evaluator import SimiarityEvaluator
 

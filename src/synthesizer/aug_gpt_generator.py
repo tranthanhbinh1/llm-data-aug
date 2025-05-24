@@ -116,7 +116,7 @@ class AugGptRunner:
                     f"Sentence number: {original_sentences.index(original_sentence)}"
                 )
                 generated_samples: AugmentedUserReviews | UserReviews = (
-                    self.data_generator.generate_reviews(
+                    self.data_generator._generate_reviews(
                         [original_sentence_prompt],
                         user_prompt,
                         model,

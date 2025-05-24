@@ -239,7 +239,7 @@ class PhoBertTrainer(TrainerEvaluatorRepository):
             float: The weighted F1 score from the evaluation
         """
         # Run the LLM generation process
-        from src.synthesizer.runner import AugGptRunner
+        from src.synthesizer.aug_gpt_generator import AugGptRunner
         from src.utils import get_instructor_instance
 
         auggpt_runner = AugGptRunner(get_instructor_instance())

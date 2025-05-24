@@ -85,7 +85,7 @@ class DataGenerator:
 
         return few_shot_examples
 
-    def generate_reviews(
+    def _generate_reviews(
         self,
         examples: list[ChatCompletionUserMessageParam],
         user_prompt: SentimentPrompt,
@@ -131,7 +131,7 @@ class DataGenerator:
                 )
                 logger.info(f"Generating reviews for batch {len(batched_records) + 1}")
                 generated_samples: AugmentedUserReviews | UserReviews = (
-                    self.generate_reviews(
+                    self._generate_reviews(
                         examples, prompt, model, batch_size, system_prompt
                     )
                 )
@@ -218,5 +218,3 @@ if __name__ == "__main__":
     generator.save_reviews(
         reviews, f"data/llm_generated/{args.sentiment}_user_reviews.csv"
     )
-
-    # NOTE: Hit Count calculation is not correct, need to set Retry of Instructor to 1 if we want to accurately calculate the hit count.

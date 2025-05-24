@@ -26,7 +26,7 @@ from synthesizer.models import (
 from openai.types.chat.chat_completion_message_param import (
     ChatCompletionSystemMessageParam,
 )
-from synthesizer.runner import AugGptRunner
+from src.synthesizer.aug_gpt_generator import AugGptRunner
 from ..utils import get_instructor_instance
 from ..constants import ORIGINAL_DATASET_PATH
 
