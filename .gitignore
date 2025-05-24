@@ -184,5 +184,4 @@ models/
 
 test.py
 
-.cursor/
 .idea/

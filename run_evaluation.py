@@ -3,7 +3,7 @@ import argparse
 
 from src.synthesizer.runner import AugGptRunner
 from src.utils import get_instructor_instance
-from src.evaluation.prompt_evaluator import PromptEvaluator
+from src.evaluation.evaluator import PromptEvaluator
 
 if __name__ == "__main__":
     """
