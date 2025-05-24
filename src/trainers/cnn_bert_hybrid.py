@@ -486,7 +486,7 @@ class CNNBertHybridTrainer(TrainerEvaluatorRepository):
 
         # Run the LLM generation process
         # TODO: dirty import, fix later
-        from src.synthesizer.runner import AugGptRunner
+        from src.synthesizer.aug_gpt_generator import AugGptRunner
         from src.utils import get_instructor_instance
 
         auggpt_runner = AugGptRunner(get_instructor_instance())
