@@ -96,11 +96,14 @@ class Evaluator:
             count = 0
             count += 1
             if count % 2 == 0:
+                # NOTE: this pass for similarity evaluation only generate a subset of the data
                 return self.similarity_evaluator.run_evaluation(sentiment, prompt)
             else:
                 synthesized_records, original_sentences, failed_sentences = (
                     self.generate_synthetic_data(sentiment, prompt)
                 )
+                # TODO: this pass in the loop needs to be a full generator run, not a subset
+                # TODO: fetch the generated data directly into the trainer evaluators
                 return self.trainer_evaluator.run_evaluation(
                     sentiment, prompt, synthesized_records, original_sentences
                 )

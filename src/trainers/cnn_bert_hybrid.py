@@ -484,20 +484,6 @@ class CNNBertHybridTrainer(TrainerEvaluatorRepository):
         # Initialize BERT model
         bert_model = AutoModel.from_pretrained("vinai/phobert-base-v2")
 
-        # Run the LLM generation process
-        # TODO: dirty import, fix later
-        from src.synthesizer.aug_gpt_generator import AugGptRunner
-        from src.utils import get_instructor_instance
-
-        auggpt_runner = AugGptRunner(get_instructor_instance())
-        # TODO: fix, this is not the correct generation process
-        auggpt_runner.generate_reviews_batch(sentiment=sentiment, user_prompt=prompt)
-
-        # Set up data path
-        data_path = os.path.join(
-            DATA_PATH,
-            "llm_generated/gemini-2.0-flash/auggpt_upsampled_user_reviews_cleaned.csv",
-        )
         # TODO: dirty import, fix later
         from src.preprocess.text_preprocessor import TextPreprocessor
 

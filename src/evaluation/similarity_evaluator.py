@@ -57,7 +57,7 @@ class SimiarityEvaluator(EvaluatorRepository):
         logger.info(f"Sampled subset size: {len(sampled_subset)}")
         return sampled_subset
 
-    # TODO: detach this function to standalone to use for other evaluators
+    # TODO: maybe this function should be detached
     def generate_synthetic_data(
         self, sentiment: str, prompt: str
     ) -> dict[str, list[str]]:
