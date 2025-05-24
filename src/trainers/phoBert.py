@@ -15,13 +15,13 @@ import os
 
 # from src.utils import save_classification_report
 from sklearn.model_selection import train_test_split
-from src.repositories.trainer import TrainerRepository
+from src.repositories.trainer import TrainerEvaluatorRepository
 from src.constants import SEED, DATA_PATH
 import argparse
 from typing import Tuple, List
 
 
-class PhoBertTrainer(TrainerRepository):
+class PhoBertTrainer(TrainerEvaluatorRepository):
     """
     Trainer for PhoBert model. Only use PhoBERT v2.
     """
@@ -228,41 +228,54 @@ class PhoBertTrainer(TrainerRepository):
         weighted_f1 = self.evaluate(test_tuple, batch_size, max_length)
         return weighted_f1
 
+    def run_evaluation(self, sentiment: str, prompt: str) -> float:
+        """Run evaluation on the model using the given sentiment and prompt.
 
-if __name__ == "__main__":
-    from src.preprocess import TextPreprocessor
+        Args:
+            sentiment: The sentiment to evaluate on
+            prompt: The prompt to use for evaluation
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--data_path",
-        type=str,
-        default=os.path.join(
+        Returns:
+            float: The weighted F1 score from the evaluation
+        """
+        # Run the LLM generation process
+        from src.synthesizer.runner import AugGptRunner
+        from src.utils import get_instructor_instance
+
+        auggpt_runner = AugGptRunner(get_instructor_instance())
+        # TODO: fix, this is not the correct generation process
+        auggpt_runner.generate_reviews_batch(sentiment=sentiment, user_prompt=prompt)
+
+        # Set up data path
+        data_path = os.path.join(
             DATA_PATH,
             "llm_generated/gemini-2.0-flash/auggpt_upsampled_user_reviews_cleaned.csv",
-        ),
-    )
-    args = parser.parse_args()
+        )
+        # TODO: dirty import, fix later
+        from src.preprocess.text_preprocessor import TextPreprocessor
 
-    preprocessor = TextPreprocessor(data=pd.read_csv(args.data_path))
+        # Initialize preprocessor and model components
+        preprocessor = TextPreprocessor(data=pd.read_csv(data_path))
+        model = AutoModelForSequenceClassification.from_pretrained(
+            "vinai/phobert-base-v2", num_labels=3
+        )
+        tokenizer = AutoTokenizer.from_pretrained("vinai/phobert-base-v2")
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5)
 
-    model = AutoModelForSequenceClassification.from_pretrained(
-        "vinai/phobert-base-v2", num_labels=3
-    )
-    tokenizer = AutoTokenizer.from_pretrained("vinai/phobert-base-v2")
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5)
-    trainer = PhoBertTrainer(
-        model=model,
-        data_path=args.data_path,
-        preprocessor=preprocessor,
-        tokenizer=tokenizer,
-        device=device,
-    )
+        # Initialize trainer
+        trainer = PhoBertTrainer(
+            model=model,
+            data_path=data_path,
+            preprocessor=preprocessor,
+            tokenizer=tokenizer,
+            device=device,
+        )
 
-    weighted_f1 = trainer.main(
-        epochs=5,
-        batch_size=16 * 6,
-        max_length=128,
-        optimizer=optimizer,
-    )
-    print(weighted_f1)
+        # Run training and evaluation
+        return trainer.main(
+            epochs=5,
+            batch_size=16 * 6,
+            max_length=128,
+            optimizer=optimizer,
+        )

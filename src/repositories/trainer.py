@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 
 
-class TrainerRepository(ABC):
+class TrainerEvaluatorRepository(ABC):
     @abstractmethod
     def load_data(self):
         raise NotImplementedError()
@@ -10,6 +10,6 @@ class TrainerRepository(ABC):
     def train(self):
         raise NotImplementedError()
 
-    # @abstractmethod
-    # def evaluate(self):
-    #     raise NotImplementedError()
+    @abstractmethod
+    def run_evaluation(self):
+        raise NotImplementedError()

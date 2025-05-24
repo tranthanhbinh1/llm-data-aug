@@ -17,7 +17,7 @@ from src.constants import DATA_PATH, LABEL_MAPPING, PROJECT_ROOT, SEED
 import argparse
 
 from src.repositories.preprocessor import PreprocessorRepository
-from src.repositories.trainer import TrainerRepository
+from src.repositories.trainer import TrainerEvaluatorRepository
 
 
 class BERTLSTMModel(nn.Module):
@@ -72,7 +72,7 @@ class BERTLSTMModel(nn.Module):
         return x
 
 
-class BERTLSTMTrainer(TrainerRepository):
+class BERTLSTMTrainer(TrainerEvaluatorRepository):
     def __init__(
         self,
         model: BERTLSTMModel,
@@ -434,62 +434,69 @@ class BERTLSTMTrainer(TrainerRepository):
 
         return weighted_f1_score
 
+    def run_evaluation(self, sentiment: str, prompt: str) -> float:
+        """Run evaluation on the model using the given sentiment and prompt.
 
-if __name__ == "__main__":
-    from src.preprocess import TextPreprocessor
+        Args:
+            sentiment: The sentiment to evaluate on
+            prompt: The prompt to use for evaluation
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--data_path",
-        type=str,
-        default=os.path.join(
+        Returns:
+            float: The weighted F1 score from the evaluation
+        """
+        # Configuration
+        bert_model_name = "vinai/phobert-base-v2"
+        hidden_dim1 = 128
+        hidden_dim2 = 64
+        dense_dim = 64
+        output_dim = len(LABEL_MAPPING)
+        dropout_rate = 0.5
+        freeze_bert = True  # Freeze BERT weights for faster training and less memory
+
+        # Create model
+        model = BERTLSTMModel(
+            bert_model_name=bert_model_name,
+            hidden_dim1=hidden_dim1,
+            hidden_dim2=hidden_dim2,
+            dense_dim=dense_dim,
+            output_dim=output_dim,
+            dropout_rate=dropout_rate,
+            freeze_bert=freeze_bert,
+        )
+
+        # Log parameter count
+        total_params = sum(p.numel() for p in model.parameters())
+        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        logging.info(f"Total parameters: {total_params:,}")
+        logging.info(f"Trainable parameters: {trainable_params:,}")
+        logging.info(f"BERT parameters frozen: {freeze_bert}")
+
+        # Run the LLM generation process
+        # TODO: dirty import, fix later
+        from src.synthesizer.runner import AugGptRunner
+        from src.utils import get_instructor_instance
+
+        auggpt_runner = AugGptRunner(get_instructor_instance())
+        # TODO: fix, this is not the correct generation process
+        auggpt_runner.generate_reviews_batch(sentiment=sentiment, user_prompt=prompt)
+
+        # Set up data path
+        data_path = os.path.join(
             DATA_PATH,
             "llm_generated/gemini-2.0-flash/auggpt_upsampled_user_reviews_cleaned.csv",
-        ),
-    )
-    args = parser.parse_args()
+        )
+        # TODO: dirty import, fix later
+        from src.preprocess.text_preprocessor import TextPreprocessor
 
-    # Configuration
-    bert_model_name = "vinai/phobert-base-v2"
-    hidden_dim1 = 128
-    hidden_dim2 = 64
-    dense_dim = 64
-    output_dim = len(LABEL_MAPPING)
-    dropout_rate = 0.5
-    freeze_bert = True  # Freeze BERT weights for faster training and less memory
+        # Initialize preprocessor and trainer
+        preprocessor = TextPreprocessor(data=pd.read_csv(data_path))
+        trainer = BERTLSTMTrainer(
+            model=model,
+            data_path=data_path,
+            tokenizer_name=bert_model_name,
+            max_length=128,
+            preprocessor=preprocessor,
+        )
 
-    # Create model
-    model = BERTLSTMModel(
-        bert_model_name=bert_model_name,
-        hidden_dim1=hidden_dim1,
-        hidden_dim2=hidden_dim2,
-        dense_dim=dense_dim,
-        output_dim=output_dim,
-        dropout_rate=dropout_rate,
-        freeze_bert=freeze_bert,
-    )
-
-    # Log parameter count
-    total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    logging.info(f"Total parameters: {total_params:,}")
-    logging.info(f"Trainable parameters: {trainable_params:,}")
-    logging.info(f"BERT parameters frozen: {freeze_bert}")
-
-    preprocessor = TextPreprocessor(data=pd.read_csv(args.data_path))
-
-    # Create trainer
-    trainer = BERTLSTMTrainer(
-        model=model,
-        data_path=os.path.join(
-            DATA_PATH,
-            "llm_generated/gemini-2.0-flash/auggpt_upsampled_user_reviews_cleaned.csv",
-        ),
-        tokenizer_name=bert_model_name,
-        max_length=128,
-        preprocessor=preprocessor,
-    )
-
-    # Run training pipeline
-    weighted_f1_score = trainer.run_training(batch_size=128, epochs=10, patience=3)
-    print(f"Final F1 score: {weighted_f1_score}")
+        # Run training pipeline and return score
+        return trainer.run_training(batch_size=128, epochs=10, patience=3)

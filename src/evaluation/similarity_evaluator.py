@@ -43,7 +43,7 @@ class SimiarityEvaluator(EvaluatorRepository):
 
     def random_split(
         self,
-        sentiment: Literal["neutral", "negative"],
+        sentiment: str,
         test_size: float = 0.05,
     ) -> pd.DataFrame:
         data = self._original_data.copy()
@@ -57,8 +57,9 @@ class SimiarityEvaluator(EvaluatorRepository):
         logger.info(f"Sampled subset size: {len(sampled_subset)}")
         return sampled_subset
 
+    # TODO: detach this function to standalone to use for other evaluators
     def generate_synthetic_data(
-        self, sentiment: Literal["neutral", "negative"], prompt: str
+        self, sentiment: str, prompt: str
     ) -> dict[str, list[str]]:
         subset = self.random_split(sentiment=sentiment)
         if subset.empty:
@@ -168,7 +169,7 @@ class SimiarityEvaluator(EvaluatorRepository):
 
     def run_evaluation(
         self,
-        sentiment: Literal["neutral", "negative"],
+        sentiment: str,
         prompt: str,
     ):
         sentence_to_synthesized_reviews = self.generate_synthetic_data(

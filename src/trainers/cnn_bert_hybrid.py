@@ -20,7 +20,7 @@ import os
 from src.constants import DATA_PATH, SEED
 from src.repositories.preprocessor import PreprocessorRepository
 from src.utils import epoch_time
-from src.repositories.trainer import TrainerRepository
+from src.repositories.trainer import TrainerEvaluatorRepository
 
 
 class CNN(nn.Module):
@@ -88,7 +88,7 @@ class CNN(nn.Module):
         return self.fc(cat)
 
 
-class CNNBertHybridTrainer(TrainerRepository):
+class CNNBertHybridTrainer(TrainerEvaluatorRepository):
     def __init__(
         self,
         bert_model,
@@ -471,36 +471,45 @@ class CNNBertHybridTrainer(TrainerRepository):
 
         return weighted_f1_score
 
+    def run_evaluation(self, sentiment: str, prompt: str) -> float:
+        """Run evaluation on the model using the given sentiment and prompt.
 
-if __name__ == "__main__":
-    from src.preprocess.text_preprocessor import TextPreprocessor
+        Args:
+            sentiment: The sentiment to evaluate on
+            prompt: The prompt to use for evaluation
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--data_path",
-        type=str,
-        default=os.path.join(
+        Returns:
+            float: The weighted F1 score from the evaluation
+        """
+        # Initialize BERT model
+        bert_model = AutoModel.from_pretrained("vinai/phobert-base-v2")
+
+        # Run the LLM generation process
+        # TODO: dirty import, fix later
+        from src.synthesizer.runner import AugGptRunner
+        from src.utils import get_instructor_instance
+
+        auggpt_runner = AugGptRunner(get_instructor_instance())
+        # TODO: fix, this is not the correct generation process
+        auggpt_runner.generate_reviews_batch(sentiment=sentiment, user_prompt=prompt)
+
+        # Set up data path
+        data_path = os.path.join(
             DATA_PATH,
             "llm_generated/gemini-2.0-flash/auggpt_upsampled_user_reviews_cleaned.csv",
-        ),
-    )
-    args = parser.parse_args()
+        )
+        # TODO: dirty import, fix later
+        from src.preprocess.text_preprocessor import TextPreprocessor
 
-    # Initialize BERT with output_hidden_states=True
-    bert_model = AutoModel.from_pretrained(
-        "vinai/phobert-base-v2",
-    )
+        # Initialize preprocessor and trainer
+        preprocessor = TextPreprocessor(data=pd.read_csv(data_path))
 
-    freeze_bert = True
+        trainer = CNNBertHybridTrainer(
+            bert_model=bert_model,
+            preprocessor=preprocessor,
+            data_path=data_path,
+            freeze_bert=True,
+        )
 
-    preprocessor = TextPreprocessor(data=pd.read_csv(args.data_path))
-
-    trainer = CNNBertHybridTrainer(
-        bert_model=bert_model,
-        preprocessor=preprocessor,
-        data_path=args.data_path,
-        freeze_bert=freeze_bert,
-    )
-
-    weighted_f1_score = trainer.main()
-    print(weighted_f1_score)
+        # Run evaluation and return score
+        return trainer.main()

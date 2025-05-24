@@ -15,10 +15,10 @@ from sklearn.preprocessing import LabelEncoder
 import argparse
 
 from src.constants import DATA_PATH, SEED
-from src.repositories.trainer import TrainerRepository
+from src.repositories.trainer import TrainerEvaluatorRepository
 
 
-class SVMTrainer(TrainerRepository):
+class SVMTrainer(TrainerEvaluatorRepository):
     def __init__(
         self,
         data_path: str,
@@ -100,7 +100,7 @@ class SVMTrainer(TrainerRepository):
 
         return weighted_f1
 
-    def run_training(self):
+    def run_evaluation(self):
         """
         Run the complete training pipeline from data loading to evaluation
 
@@ -129,6 +129,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     svm_trainer = SVMTrainer(data_path=args.data_path)
-    weighted_f1 = svm_trainer.run_training()
+    weighted_f1 = svm_trainer.run_evaluation()
 
     print(weighted_f1)

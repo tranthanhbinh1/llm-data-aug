@@ -34,7 +34,7 @@ class AugGptRunner:
     @classmethod
     def prepare_original_sentences(
         cls,
-        sentiment: Literal["neutral", "negative"],  # The minority classes
+        sentiment: str,  # The minority classes
         data: pd.DataFrame = pd.read_csv(ORIGINAL_DATASET_PATH),
     ) -> tuple[list[str], list[ChatCompletionUserMessageParam]]:
         """Get examples from the original dataset for each LLM call"""
@@ -76,7 +76,7 @@ class AugGptRunner:
 
     def _generate_reviews(
         self,
-        sentiment: Literal["neutral", "negative"],
+        sentiment: str,
         user_prompt: SentimentPrompt,
         augmentor_prompt: ChatCompletionSystemMessageParam = BASE_AUGMENTOR_PROMPT,
         model: str = "gemini-2.0-flash",
