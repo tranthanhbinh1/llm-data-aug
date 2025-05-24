@@ -3,7 +3,7 @@ import argparse
 
 from src.synthesizer.runner import AugGptRunner
 from src.utils import get_instructor_instance
-from src.evaluation.evaluator import PromptEvaluator
+from src.evaluation.similarity_evaluator import SimiarityEvaluator
 
 if __name__ == "__main__":
     """
@@ -30,8 +30,8 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    evaluator = PromptEvaluator(AugGptRunner(get_instructor_instance()))
-    average_cosine_similarity = evaluator.main(
+    evaluator = SimiarityEvaluator(AugGptRunner(get_instructor_instance()))
+    average_cosine_similarity = evaluator.run_evaluation(
         sentiment=args.sentiment,
         prompt=args.prompt,
     )

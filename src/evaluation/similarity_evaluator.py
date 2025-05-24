@@ -15,6 +15,8 @@ import torch
 from loguru import logger
 from sentence_transformers import SentenceTransformer
 
+from src.repositories.evaluator import EvaluatorRepository
+
 from ..constants import LABEL_MAPPING, NUM_REPHRASED_SENTENCES
 from synthesizer.generator import DataGenerator
 from synthesizer.models import (
@@ -29,8 +31,7 @@ from ..utils import get_instructor_instance
 from ..constants import ORIGINAL_DATASET_PATH
 
 
-#TODO: Major ovehaul needed to properly implement promptimal and downstream eval suite
-class PromptEvaluator:
+class SimiarityEvaluator(EvaluatorRepository):
     def __init__(
         self,
         auggpt_runner: AugGptRunner,
@@ -165,7 +166,7 @@ class PromptEvaluator:
 
         return overall_mean
 
-    def main(
+    def run_evaluation(
         self,
         sentiment: Literal["neutral", "negative"],
         prompt: str,
@@ -186,8 +187,8 @@ if __name__ == "__main__":
 
     load_dotenv()
 
-    evaluator = PromptEvaluator(AugGptRunner(get_instructor_instance()))
-    average_cosine_similarity = evaluator.main(
+    evaluator = SimiarityEvaluator(AugGptRunner(get_instructor_instance()))
+    average_cosine_similarity = evaluator.run_evaluation(
         sentiment="neutral",
         prompt="Bạn là một trợ lý hữu ích, có nhiệm vụ diễn đạt lại văn bản và làm cho câu văn trở nên mượt mà hơn.",
     )

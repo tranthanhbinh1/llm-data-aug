@@ -27,6 +27,10 @@ def get_instructor_instance():
     return instructor.from_genai(genai.Client(api_key=os.getenv("GOOGLE_AI_API_KEY")))
 
 
+def get_genai_client():
+    return genai.Client(api_key=os.getenv("GOOGLE_AI_API_KEY"))
+
+
 def epoch_time(start_time, end_time):
     elapsed_time = end_time - start_time
     elapsed_mins = int(elapsed_time / 60)
