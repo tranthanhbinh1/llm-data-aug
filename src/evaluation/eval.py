@@ -1,18 +1,13 @@
-import asyncio
 import pandas as pd
-from typing import Optional, Callable, Tuple, Dict, Any
+from typing import Optional, Callable, Dict, Any
 from loguru import logger as logging
 from src.constants import LABEL_MAPPING, NUM_REPHRASED_SENTENCES, ORIGINAL_DATASET_PATH
 from src.evaluation.similarity_evaluator import SimiarityEvaluator
 from src.repositories.trainer import TrainerEvaluatorRepository
-
-# Promptimal imports
-from promptimal.optimizer.main import optimize
-from promptimal.dtos import PromptCandidate, TokenCount
-from promptimal.app import App
 from src.synthesizer.aug_gpt_generator import AugGptRunner
 from src.synthesizer.generator import DataGenerator
 from src.synthesizer.models import AugmentedUserReviews, SentimentPrompt, UserReviews
+from src.trainers.cnn_bert_hybrid import CNNBertHybridTrainer
 from src.utils import get_instructor_instance
 from openai.types.chat.chat_completion_message_param import (
     ChatCompletionSystemMessageParam,
@@ -94,7 +89,7 @@ class Evaluator:
         # Generate full dataset
         data_path = self.data_generator.generate_reviews_batch(
             sentiment=sentiment,
-            user_prompt=SentimentPrompt.AUG_GPT_PROMPT,  # TODO: needs fixing
+            user_prompt=SentimentPrompt.AUG_GPT_PROMPT,
             augmentor_prompt=ChatCompletionSystemMessageParam(
                 role="system",
                 content=prompt,
@@ -105,13 +100,13 @@ class Evaluator:
 
         return data_path
 
-    def create_hybrid_evaluator(self) -> Callable:
+    def create_hybrid_evaluator(self, sentiment: str, prompt: str) -> Callable:
         """
         Create a hybrid evaluator that combines the trainer and similarity evaluators.
         This evaluator has to keep track of its state and iteration count.
         """
 
-        def hybrid_evaluator(sentiment: str, prompt: str) -> float:
+        def hybrid_evaluator() -> float:
             count = 0
             count += 1
             if count == 5:
@@ -128,3 +123,6 @@ class Evaluator:
                 )
 
         return hybrid_evaluator
+
+    def evaluate(self, sentiment: str, prompt: str) -> float:
+        return self.similarity_evaluator.run_evaluation(sentiment, prompt)

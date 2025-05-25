@@ -9,7 +9,7 @@
 ## 7. Report the average similarity score
 
 
-from typing import Literal, cast
+from typing import cast
 import pandas as pd
 import torch
 from loguru import logger
@@ -53,8 +53,8 @@ class SimiarityEvaluator(EvaluatorRepository):
         subset = data[data["Sentiment"] == DataGenerator.SENTIMENT_MAPPING[sentiment]]
         sampled_subset = subset.sample(frac=test_size, random_state=42)
 
-        logger.info(f"Total {sentiment} records: {len(subset)}")
-        logger.info(f"Sampled subset size: {len(sampled_subset)}")
+        # logger.info(f"Total {sentiment} records: {len(subset)}")
+        # logger.info(f"Sampled subset size: {len(sampled_subset)}")
         return sampled_subset
 
     # TODO: maybe this function should be detached
@@ -89,8 +89,8 @@ class SimiarityEvaluator(EvaluatorRepository):
             )
         )
 
-        if failed_sentences:
-            logger.warning(f"Failed to generate for {len(failed_sentences)} sentences")
+        # if failed_sentences:
+        #     logger.warning(f"Failed to generate for {len(failed_sentences)} sentences")
 
         # Create a mapping between an original sentence and its corresponding records
         _original_sentence_to_records: dict[str, AugmentedUserReviews] = dict()
@@ -107,7 +107,7 @@ class SimiarityEvaluator(EvaluatorRepository):
             for original_sentence, augmented_reviews in _original_sentence_to_records.items()
         }
 
-        logger.info(f"Generated {len(synthesized_records)} synthetic reviews")
+        # logger.info(f"Generated {len(synthesized_records)} synthetic reviews")
         return original_sentence_to_synthesized_reviews
 
     def create_emebeddings(self, sentence_to_synthesized_reviews: dict[str, list[str]]):
@@ -194,4 +194,4 @@ if __name__ == "__main__":
         prompt="Bạn là một trợ lý hữu ích, có nhiệm vụ diễn đạt lại văn bản và làm cho câu văn trở nên mượt mà hơn.",
     )
 
-    logger.info(f"Average cosine similarity: {average_cosine_similarity}")
+    # logger.info(f"Average cosine similarity: {average_cosine_similarity}")
