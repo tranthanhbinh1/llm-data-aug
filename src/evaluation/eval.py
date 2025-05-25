@@ -53,7 +53,7 @@ class Evaluator:
         logging.info(f"Sampled subset size: {len(sampled_subset)}")
         return sampled_subset
 
-    def generate_synthetic_data(
+    def genereate_subset_synthetic_data(
         self, sentiment: str, prompt: str
     ) -> tuple[list[AugmentedUserReviews | UserReviews], list[str], list[str]]:
         subset = self.random_split(sentiment=sentiment)
@@ -83,8 +83,27 @@ class Evaluator:
                 original_sentence_prompts=_original_sentence_prompts,
             )
         )
+
         # TODO: might need to tweak this return output to make it more straightforward
         return synthesized_records, original_sentences, failed_sentences
+
+    def generate_full_synthetic_data(self, sentiment: str, prompt: str) -> str:
+        data = self.original_data.copy()
+        data["Sentiment"] = data["Sentiment"].map(LABEL_MAPPING)
+
+        # Generate full dataset
+        data_path = self.data_generator.generate_reviews_batch(
+            sentiment=sentiment,
+            user_prompt=SentimentPrompt.AUG_GPT_PROMPT,  # TODO: needs fixing
+            augmentor_prompt=ChatCompletionSystemMessageParam(
+                role="system",
+                content=prompt,
+            ),
+            num_to_generate=NUM_REPHRASED_SENTENCES,
+            model="gemini-2.0-flash",
+        )
+
+        return data_path
 
     def create_hybrid_evaluator(self) -> Callable:
         """
@@ -95,17 +114,17 @@ class Evaluator:
         def hybrid_evaluator(sentiment: str, prompt: str) -> float:
             count = 0
             count += 1
-            if count % 2 == 0:
+            if count == 5:
                 # NOTE: this pass for similarity evaluation only generate a subset of the data
                 return self.similarity_evaluator.run_evaluation(sentiment, prompt)
             else:
-                synthesized_records, original_sentences, failed_sentences = (
-                    self.generate_synthetic_data(sentiment, prompt)
+                # This pass generate a full synthetic dataset so our trainers can execute the full evaluation suite
+                data_path = self.generate_full_synthetic_data(
+                    sentiment=sentiment,
+                    prompt=prompt,
                 )
-                # TODO: this pass in the loop needs to be a full generator run, not a subset
-                # TODO: fetch the generated data directly into the trainer evaluators
                 return self.trainer_evaluator.run_evaluation(
-                    sentiment, prompt, synthesized_records, original_sentences
+                    data_path=data_path,
                 )
 
         return hybrid_evaluator

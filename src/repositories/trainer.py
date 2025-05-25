@@ -11,5 +11,5 @@ class TrainerEvaluatorRepository(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def run_evaluation(self):
+    def run_evaluation(self, data_path: str):
         raise NotImplementedError()

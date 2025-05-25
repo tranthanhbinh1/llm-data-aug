@@ -434,7 +434,7 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
 
         return weighted_f1_score
 
-    def run_evaluation(self, sentiment: str, prompt: str) -> float:
+    def run_evaluation(self, data_path: str) -> float:
         """Run evaluation on the model using the given sentiment and prompt.
 
         Args:

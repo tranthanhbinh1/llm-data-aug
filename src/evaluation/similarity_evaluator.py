@@ -18,8 +18,8 @@ from sentence_transformers import SentenceTransformer
 from src.repositories.evaluator import EvaluatorRepository
 
 from ..constants import LABEL_MAPPING, NUM_REPHRASED_SENTENCES
-from synthesizer.generator import DataGenerator
-from synthesizer.models import (
+from ..synthesizer.generator import DataGenerator
+from ..synthesizer.models import (
     AugmentedUserReviews,
     SentimentPrompt,
 )

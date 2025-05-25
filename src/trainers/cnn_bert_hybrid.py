@@ -471,16 +471,7 @@ class CNNBertHybridTrainer(TrainerEvaluatorRepository):
 
         return weighted_f1_score
 
-    def run_evaluation(self, sentiment: str, prompt: str) -> float:
-        """Run evaluation on the model using the given sentiment and prompt.
-
-        Args:
-            sentiment: The sentiment to evaluate on
-            prompt: The prompt to use for evaluation
-
-        Returns:
-            float: The weighted F1 score from the evaluation
-        """
+    def run_evaluation(self, data_path: str) -> float:
         # Initialize BERT model
         bert_model = AutoModel.from_pretrained("vinai/phobert-base-v2")
 
@@ -496,6 +487,5 @@ class CNNBertHybridTrainer(TrainerEvaluatorRepository):
             data_path=data_path,
             freeze_bert=True,
         )
-
         # Run evaluation and return score
         return trainer.main()

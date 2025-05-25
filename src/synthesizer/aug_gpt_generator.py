@@ -146,7 +146,7 @@ class AugGptRunner:
         failed_sentences: list[str],
         model: str,
         sentiment: str,
-    ) -> None:
+    ) -> str:
         # Save the successful generations
         self.data_generator.save_reviews(
             batched_records,
@@ -162,25 +162,32 @@ class AugGptRunner:
             index=False,
         )
 
+        # Return the data path
+        return (
+            f"data/llm_generated/{model}/auggpt_augmented_user_reviews_{sentiment}.csv"
+        )
+
     def generate_reviews_batch(
         self,
         sentiment: Literal["neutral", "negative"],
         user_prompt: SentimentPrompt,
+        augmentor_prompt: ChatCompletionSystemMessageParam = BASE_AUGMENTOR_PROMPT,
         model: str = "gemini-2.0-flash",
         num_to_generate: int = NUM_REPHRASED_SENTENCES,
         _: ChatCompletionSystemMessageParam = DataGenerator.BASE_SYSTEM_PROMPT,
         index: Optional[int] = 0,
-    ) -> list[AugmentedUserReviews | UserReviews]:
+    ) -> str:
         batched_records, original_sentences, failed_sentences = self._generate_reviews(
             sentiment=sentiment,
             user_prompt=user_prompt,
+            augmentor_prompt=augmentor_prompt,
             model=model,
             num_to_generate=num_to_generate,
             _=_,
             index=index,
         )
 
-        self.save_generated_reviews(
+        data_path = self.save_generated_reviews(
             batched_records,
             original_sentences,
             failed_sentences,
@@ -188,7 +195,7 @@ class AugGptRunner:
             sentiment,
         )
 
-        return batched_records
+        return data_path
 
 
 if __name__ == "__main__":

@@ -228,7 +228,7 @@ class PhoBertTrainer(TrainerEvaluatorRepository):
         weighted_f1 = self.evaluate(test_tuple, batch_size, max_length)
         return weighted_f1
 
-    def run_evaluation(self, sentiment: str, prompt: str) -> float:
+    def run_evaluation(self, data_path: str) -> float:
         """Run evaluation on the model using the given sentiment and prompt.
 
         Args:
