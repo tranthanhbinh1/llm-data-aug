@@ -6,6 +6,7 @@ from src.constants import DATA_PATH, PROJECT_ROOT
 from vncorenlp import VnCoreNLP
 
 
+# TODO: Needs to make this a Singleton, because a new VnCoreNLP instance is created for each instance of TextPreprocessor
 class TextPreprocessor(PreprocessorRepository):
     def __init__(self, data: pd.DataFrame):
         self.data = data
