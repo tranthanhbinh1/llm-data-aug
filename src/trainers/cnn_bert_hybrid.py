@@ -17,7 +17,7 @@ from torch.optim import Optimizer
 from torch.utils.data import DataLoader, RandomSampler, TensorDataset
 import argparse
 import os
-from src.constants import DATA_PATH, SEED
+from src.constants import DATA_PATH, ORIGINAL_DATASET_PATH, SEED
 from src.repositories.preprocessor import PreprocessorRepository
 from src.utils import epoch_time
 from src.repositories.trainer import TrainerEvaluatorRepository
@@ -489,3 +489,15 @@ class CNNBertHybridTrainer(TrainerEvaluatorRepository):
         )
         # Run evaluation and return score
         return trainer.main()
+
+
+if __name__ == "__main__":
+    from src.preprocess.text_preprocessor import TextPreprocessor
+
+    trainer = CNNBertHybridTrainer(
+        bert_model=AutoModel.from_pretrained("vinai/phobert-base-v2"),
+        preprocessor=TextPreprocessor(data=pd.read_csv(ORIGINAL_DATASET_PATH)),
+        data_path=ORIGINAL_DATASET_PATH,
+        freeze_bert=True,
+    )
+    trainer.run_evaluation(ORIGINAL_DATASET_PATH)

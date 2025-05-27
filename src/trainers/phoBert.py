@@ -16,8 +16,7 @@ import os
 # from src.utils import save_classification_report
 from sklearn.model_selection import train_test_split
 from src.repositories.trainer import TrainerEvaluatorRepository
-from src.constants import SEED, DATA_PATH
-import argparse
+from src.constants import ORIGINAL_DATASET_PATH, SEED
 from typing import Tuple, List
 
 
@@ -266,3 +265,17 @@ class PhoBertTrainer(TrainerEvaluatorRepository):
             max_length=128,
             optimizer=optimizer,
         )
+
+
+if __name__ == "__main__":
+    from src.preprocess.text_preprocessor import TextPreprocessor
+
+    trainer = PhoBertTrainer(
+        model=AutoModelForSequenceClassification.from_pretrained(
+            "vinai/phobert-base-v2", num_labels=3
+        ),
+        data_path=ORIGINAL_DATASET_PATH,
+        preprocessor=TextPreprocessor(data=pd.read_csv(ORIGINAL_DATASET_PATH)),
+        tokenizer=AutoTokenizer.from_pretrained("vinai/phobert-base-v2"),
+    )
+    trainer.run_evaluation(ORIGINAL_DATASET_PATH)

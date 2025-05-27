@@ -67,6 +67,8 @@ class TextPreprocessor(PreprocessorRepository):
         return " ".join(" ".join(sentence) for sentence in tokens)
 
     def preprocess(self) -> pd.DataFrame:
+        # Remove float objects
+        self.data = self.data[self.data["Review"].apply(lambda x: isinstance(x, str))]
         self.data["Review"] = self.data["Review"].apply(
             str.lower
         )  # Chuyển đổi văn bản thành chữ thường trước khi xử lý

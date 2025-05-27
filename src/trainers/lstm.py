@@ -1,5 +1,4 @@
 from datetime import datetime
-import os
 import pandas as pd
 from sklearn.metrics import classification_report, f1_score, accuracy_score
 import torch
@@ -13,8 +12,7 @@ from tqdm import tqdm
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader, TensorDataset
 from transformers import AutoTokenizer, AutoModel
-from src.constants import DATA_PATH, LABEL_MAPPING, PROJECT_ROOT, SEED
-import argparse
+from src.constants import LABEL_MAPPING, ORIGINAL_DATASET_PATH, PROJECT_ROOT, SEED
 
 from src.repositories.preprocessor import PreprocessorRepository
 from src.repositories.trainer import TrainerEvaluatorRepository
@@ -486,3 +484,22 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
 
         # Run training pipeline and return score
         return trainer.run_training(batch_size=128, epochs=10, patience=3)
+
+
+if __name__ == "__main__":
+    from src.preprocess.text_preprocessor import TextPreprocessor
+
+    trainer = BERTLSTMTrainer(
+        model=BERTLSTMModel(
+            bert_model_name="vinai/phobert-base-v2",
+            hidden_dim1=128,
+            hidden_dim2=64,
+            dense_dim=64,
+            output_dim=len(LABEL_MAPPING),
+            dropout_rate=0.5,
+            freeze_bert=True,
+        ),
+        data_path=ORIGINAL_DATASET_PATH,
+        preprocessor=TextPreprocessor(data=pd.read_csv(ORIGINAL_DATASET_PATH)),
+    )
+    trainer.run_evaluation(ORIGINAL_DATASET_PATH)

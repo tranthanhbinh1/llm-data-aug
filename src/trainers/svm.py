@@ -14,7 +14,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 import argparse
 
-from src.constants import DATA_PATH, SEED
+from src.constants import DATA_PATH, ORIGINAL_DATASET_PATH, SEED
 from src.repositories.trainer import TrainerEvaluatorRepository
 
 
@@ -121,10 +121,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--data_path",
         type=str,
-        default=os.path.join(
-            DATA_PATH,
-            "llm_generated/gemini-2.0-flash/auggpt_upsampled_user_reviews_cleaned.csv",
-        ),
+        default=ORIGINAL_DATASET_PATH,
     )
     args = parser.parse_args()
 
