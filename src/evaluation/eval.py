@@ -7,11 +7,9 @@ from src.repositories.trainer import TrainerEvaluatorRepository
 from src.synthesizer.aug_gpt_generator import AugGptRunner
 from src.synthesizer.generator import DataGenerator
 from src.synthesizer.models import AugmentedUserReviews, SentimentPrompt, UserReviews
-from src.trainers.cnn_bert_hybrid import CNNBertHybridTrainer
 from src.utils import get_instructor_instance
 from openai.types.chat.chat_completion_message_param import (
     ChatCompletionSystemMessageParam,
-    ChatCompletionUserMessageParam,
 )
 
 

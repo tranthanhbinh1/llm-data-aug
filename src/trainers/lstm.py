@@ -502,4 +502,5 @@ if __name__ == "__main__":
         data_path=ORIGINAL_DATASET_PATH,
         preprocessor=TextPreprocessor(data=pd.read_csv(ORIGINAL_DATASET_PATH)),
     )
-    trainer.run_evaluation(ORIGINAL_DATASET_PATH)
+    weighted_f1 = trainer.run_evaluation(ORIGINAL_DATASET_PATH)
+    print(weighted_f1)

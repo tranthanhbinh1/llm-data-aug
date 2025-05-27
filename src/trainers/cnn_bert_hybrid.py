@@ -500,4 +500,5 @@ if __name__ == "__main__":
         data_path=ORIGINAL_DATASET_PATH,
         freeze_bert=True,
     )
-    trainer.run_evaluation(ORIGINAL_DATASET_PATH)
+    weighted_f1 = trainer.run_evaluation(ORIGINAL_DATASET_PATH)
+    print(weighted_f1)

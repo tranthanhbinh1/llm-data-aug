@@ -16,7 +16,7 @@ import os
 # from src.utils import save_classification_report
 from sklearn.model_selection import train_test_split
 from src.repositories.trainer import TrainerEvaluatorRepository
-from src.constants import ORIGINAL_DATASET_PATH, SEED
+from src.constants import ORIGINAL_DATASET_PATH, SEED, LABEL_MAPPING
 from typing import Tuple, List
 
 
@@ -61,13 +61,17 @@ class PhoBertTrainer(TrainerEvaluatorRepository):
 
         # Extract sentences and labels
         train_sentences = train_data["tokenized_text"].tolist()
-        train_labels = train_data["Sentiment"].tolist()
+        train_labels = [
+            LABEL_MAPPING[label] for label in train_data["Sentiment"].tolist()
+        ]
 
         val_sentences = val_data["tokenized_text"].tolist()
-        val_labels = val_data["Sentiment"].tolist()
+        val_labels = [LABEL_MAPPING[label] for label in val_data["Sentiment"].tolist()]
 
         test_sentences = test_data["tokenized_text"].tolist()
-        test_labels = test_data["Sentiment"].tolist()
+        test_labels = [
+            LABEL_MAPPING[label] for label in test_data["Sentiment"].tolist()
+        ]
 
         # Log dataset sizes
         logging.info(f"Train set size: {len(train_sentences)}")
@@ -278,4 +282,5 @@ if __name__ == "__main__":
         preprocessor=TextPreprocessor(data=pd.read_csv(ORIGINAL_DATASET_PATH)),
         tokenizer=AutoTokenizer.from_pretrained("vinai/phobert-base-v2"),
     )
-    trainer.run_evaluation(ORIGINAL_DATASET_PATH)
+    weighted_f1 = trainer.run_evaluation(ORIGINAL_DATASET_PATH)
+    print(weighted_f1)
