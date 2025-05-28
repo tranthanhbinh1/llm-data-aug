@@ -67,7 +67,6 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    # Initialize counter
     counter = EvaluationCounter()
 
     if args.reset_counter:

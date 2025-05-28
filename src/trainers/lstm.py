@@ -106,7 +106,6 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
 
     def _prepare_data(self):
         self.data = self.preprocessor.preprocess()
-        # Split the data
         train_data, test_data = train_test_split(
             self.data, test_size=0.2, random_state=SEED
         )
@@ -114,12 +113,10 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
             train_data, test_size=0.2, random_state=SEED
         )
 
-        # Log dataset sizes
         logging.info(f"Train set size: {len(train_data)}")
         logging.info(f"Validation set size: {len(val_data)}")
         logging.info(f"Test set size: {len(test_data)}")
 
-        # Tokenize texts using BERT tokenizer
         train_encodings = self.tokenizer(
             train_data["tokenized_text"].tolist(),
             truncation=True,
@@ -144,12 +141,9 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
             return_tensors="pt",
         )
 
-        # Convert labels: first try LABEL_MAPPING (text to int), then LabelEncoder
         logging.info(f"Unique labels in train data: {train_data['Sentiment'].unique()}")
 
-        # Try to convert text labels to integers using LABEL_MAPPING first
         try:
-            # If labels are text, convert them to integers using LABEL_MAPPING
             train_sentiment_mapped = [
                 LABEL_MAPPING[label] for label in train_data["Sentiment"]
             ]
@@ -164,19 +158,16 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
             )
             logging.info(f"LABEL_MAPPING used: {LABEL_MAPPING}")
         except (KeyError, TypeError):
-            # If labels are already integers or conversion fails, use them as-is
             train_sentiment_mapped = train_data["Sentiment"].tolist()
             val_sentiment_mapped = val_data["Sentiment"].tolist()
             test_sentiment_mapped = test_data["Sentiment"].tolist()
             logging.info("Labels appear to be already numeric, using them directly")
 
-        # Now apply LabelEncoder for consistency
         label_encoder = LabelEncoder()
         y_train = label_encoder.fit_transform(train_sentiment_mapped)
         y_val = label_encoder.transform(val_sentiment_mapped)
         y_test = label_encoder.transform(test_sentiment_mapped)
 
-        # Log label distribution and mapping
         train_label_counts = np.bincount(y_train)
         logging.info(f"Training label distribution by class: {train_label_counts}")
         logging.info(f"Label encoder classes: {label_encoder.classes_}")
@@ -195,12 +186,10 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
             self._prepare_data()
         )
 
-        # Convert labels to tensors
         y_train_tensor = torch.tensor(y_train, dtype=torch.long)
         y_val_tensor = torch.tensor(y_val, dtype=torch.long)
         y_test_tensor = torch.tensor(y_test, dtype=torch.long)
 
-        # Create tensor datasets
         train_dataset = TensorDataset(
             train_encodings.input_ids, train_encodings.attention_mask, y_train_tensor
         )
@@ -231,13 +220,11 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
             batch_attention_mask = batch_attention_mask.to(self.device)
             batch_labels = batch_labels.to(self.device)
 
-            # Clear gradients
             optimizer.zero_grad()
 
             # Forward pass
             outputs = self.model(batch_input_ids, batch_attention_mask)
 
-            # Calculate loss
             loss = criterion(outputs, batch_labels)
 
             # Backward pass and optimize
@@ -253,14 +240,11 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
             all_preds.extend(preds.cpu().numpy())
             all_labels.extend(batch_labels.cpu().numpy())
 
-            # Update progress bar with current loss
             progress_bar.set_postfix(loss=f"{loss.item():.4f}")
 
-        # Calculate training accuracy
         train_acc = accuracy_score(all_labels, all_preds)
         logging.info(f"Training accuracy: {train_acc:.4f}")
 
-        # Calculate class distribution of predictions
         pred_counts = np.bincount(all_preds, minlength=3)  # 3 classes for sentiment
         logging.info(f"Prediction distribution: {pred_counts}")
 
@@ -274,7 +258,6 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
         all_labels = []
 
         for batch_input_ids, batch_attention_mask, batch_labels in data_loader:
-            # Move tensors to device
             batch_input_ids = batch_input_ids.to(self.device)
             batch_attention_mask = batch_attention_mask.to(self.device)
             batch_labels = batch_labels.to(self.device)
@@ -291,11 +274,9 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
             all_preds.extend(preds.cpu().numpy())
             all_labels.extend(batch_labels.cpu().numpy())
 
-        # Calculate metrics
         accuracy = accuracy_score(all_labels, all_preds)
         avg_loss = total_loss / len(data_loader)
 
-        # Log prediction distribution
         pred_counts = np.bincount(all_preds, minlength=3)  # 3 classes for sentiment
 
         return avg_loss, accuracy, all_preds, all_labels, pred_counts
@@ -321,10 +302,8 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
             # Training phase
             train_loss = self.train(optimizer, criterion, train_loader)
 
-            # Validation phase
             val_loss, val_acc, _, _, pred_counts = self.evaluate(criterion, val_loader)
 
-            # Update progress bar with metrics
             epoch_progress.set_postfix(
                 train_loss=f"{train_loss:.4f}",
                 val_loss=f"{val_loss:.4f}",
@@ -351,7 +330,6 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
             else:
                 patience_counter += 1
 
-            # Early stopping
             if patience_counter >= patience:
                 logging.info(f"Early stopping triggered at epoch {epoch + 1}")
                 break
@@ -393,10 +371,8 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
         Returns:
             float: Weighted F1 score from test set evaluation
         """
-        # Load and prepare data
         train_dataset, val_dataset, test_dataset = self.load_data()
 
-        # Create data loaders
         train_loader = DataLoader(
             train_dataset,
             batch_size=batch_size,
@@ -419,7 +395,6 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
         # Check if BERT is frozen
         freeze_bert = not any(p.requires_grad for p in self.model.bert.parameters())
 
-        # Configure optimizer based on BERT freezing
         if not freeze_bert:
             # Parameters with different learning rates
             bert_params = list(self.model.bert.parameters())
@@ -442,12 +417,10 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
                 weight_decay=1e-5,
             )
         else:
-            # If BERT is frozen, use single learning rate for all trainable parameters
             optimizer = torch.optim.AdamW(
                 self.model.parameters(), lr=1e-3, weight_decay=1e-5
             )
 
-        # Train model
         self.training_loop(
             optimizer,
             criterion,
@@ -457,7 +430,6 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
             patience=patience,
         )
 
-        # Final evaluation
         weighted_f1_score = self.final_evaluate(test_loader)
 
         return weighted_f1_score
@@ -479,9 +451,8 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
         dense_dim = 64
         output_dim = 3  # Number of sentiment classes
         dropout_rate = 0.5
-        freeze_bert = True  # Freeze BERT weights for faster training and less memory
+        freeze_bert = True  # Freeze BERT weights
 
-        # Create model
         model = BERTLSTMModel(
             bert_model_name=bert_model_name,
             hidden_dim1=hidden_dim1,
@@ -502,7 +473,6 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
         # TODO: dirty import, fix later
         from src.preprocess.text_preprocessor import TextPreprocessor
 
-        # Initialize preprocessor and trainer
         preprocessor = TextPreprocessor(data=pd.read_csv(data_path))
         trainer = BERTLSTMTrainer(
             model=model,
@@ -512,7 +482,6 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
             preprocessor=preprocessor,
         )
 
-        # Run training pipeline and return score
         return float(trainer.run_training(batch_size=128, epochs=10, patience=3))
 
 

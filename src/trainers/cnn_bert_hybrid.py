@@ -106,10 +106,8 @@ class CNNBertHybridTrainer(TrainerEvaluatorRepository):
         self.preprocessor = preprocessor
         self.freeze_bert = freeze_bert
 
-        # Move BERT to device
         self.bert_model.to(self.device)
 
-        # Freeze BERT weights if specified
         if self.freeze_bert:
             for param in self.bert_model.parameters():
                 param.requires_grad = False
@@ -117,7 +115,6 @@ class CNNBertHybridTrainer(TrainerEvaluatorRepository):
         else:
             logging.info("BERT model parameters trainable")
 
-        # Count trainable parameters
         total_params = sum(p.numel() for p in self.bert_model.parameters())
         trainable_params = sum(
             p.numel() for p in self.bert_model.parameters() if p.requires_grad
@@ -135,7 +132,6 @@ class CNNBertHybridTrainer(TrainerEvaluatorRepository):
 
     def load_data(self):
         self.data = self.preprocessor.preprocess()
-        # Split data into train, validation and test sets
         train_data, test_data = train_test_split(
             self.data, test_size=0.2, random_state=SEED
         )
@@ -143,7 +139,6 @@ class CNNBertHybridTrainer(TrainerEvaluatorRepository):
             train_data, test_size=0.2, random_state=SEED
         )
 
-        # Extract sentences and labels
         train_sentences = train_data["tokenized_text"].tolist()
         train_labels = train_data["Sentiment"].tolist()
 
@@ -153,7 +148,6 @@ class CNNBertHybridTrainer(TrainerEvaluatorRepository):
         test_sentences = test_data["tokenized_text"].tolist()
         test_labels = test_data["Sentiment"].tolist()
 
-        # Log dataset sizes
         logging.info(f"Train set size: {len(train_sentences)}")
         logging.info(f"Validation set size: {len(val_sentences)}")
         logging.info(f"Test set size: {len(test_sentences)}")
@@ -174,20 +168,16 @@ class CNNBertHybridTrainer(TrainerEvaluatorRepository):
 
         logging.info(f"Unique labels in data: {set(labels)}")
 
-        # Try to convert text labels to integers using LABEL_MAPPING first
         try:
-            # If labels are text, convert them to integers using LABEL_MAPPING
             mapped_labels = [LABEL_MAPPING[label] for label in labels]
             logging.info(
                 "Successfully converted text labels to integers using LABEL_MAPPING"
             )
             logging.info(f"LABEL_MAPPING used: {LABEL_MAPPING}")
         except (KeyError, TypeError):
-            # If labels are already integers or conversion fails, use them as-is
             mapped_labels = labels
             logging.info("Labels appear to be already numeric, using them directly")
 
-        # Now apply LabelEncoder for consistency
         self.le = LabelEncoder()
         encoded_labels = self.le.fit_transform(mapped_labels)
 
@@ -435,7 +425,6 @@ class CNNBertHybridTrainer(TrainerEvaluatorRepository):
         """
         Run the complete training pipeline from data loading to evaluation
         """
-        # Get data splits
         (
             (train_sentences, train_labels),
             (val_sentences, val_labels),
@@ -457,7 +446,6 @@ class CNNBertHybridTrainer(TrainerEvaluatorRepository):
             val_encoded_label_tensors,
         ) = self.encode_tokenize(val_sentences, val_labels)
 
-        # Create data loaders
         train_data_loader = self._create_loaders(
             train_input_ids,
             train_attention_masks,
@@ -471,14 +459,9 @@ class CNNBertHybridTrainer(TrainerEvaluatorRepository):
 
         # Initialize CNN model
         cnn = self._initialize_model()
-
-        # Configure optimizer
         optimizer = self._configure_optimizer(cnn)
-
-        # Define loss function
         criterion = nn.CrossEntropyLoss()
 
-        # Run training loop
         weighted_f1_score = self.training_loop(
             cnn,
             train_data_loader,
@@ -491,13 +474,11 @@ class CNNBertHybridTrainer(TrainerEvaluatorRepository):
         return weighted_f1_score
 
     def run_evaluation(self, data_path: str) -> float:
-        # Initialize BERT model
         bert_model = AutoModel.from_pretrained("vinai/phobert-base-v2")
 
         # TODO: dirty import, fix later
         from src.preprocess.text_preprocessor import TextPreprocessor
 
-        # Initialize preprocessor and trainer
         preprocessor = TextPreprocessor(data=pd.read_csv(data_path))
 
         trainer = CNNBertHybridTrainer(
@@ -506,7 +487,6 @@ class CNNBertHybridTrainer(TrainerEvaluatorRepository):
             data_path=data_path,
             freeze_bert=True,
         )
-        # Run evaluation and return score
         return trainer.main()
 
 
