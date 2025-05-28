@@ -7,7 +7,6 @@ import pandas as pd
 from transformers import AutoTokenizer, AutoModel
 import torch
 from src.synthesizer.aug_gpt_generator import AugGptRunner
-from src.utils import get_instructor_instance
 from promptimal.app import App
 from promptimal.promptimal import generate_evaluator
 
@@ -34,7 +33,7 @@ def main():
         """
     )
     optimized_prompt, is_finished = app.start(
-        improvement_request="Viết lại câu văn bằng ngôn ngữ đơn giản, dễ hiểu hơn cho người đọc phổ thông, giữ nguyên ý nghĩa",
+        improvement_request="Viết lại để bạn có dựa vào đó tạo và diễn đạt lại các câu văn bằng ngôn ngữ phong phú hơn mà vẫn giữ nguyên ý nghĩa gốc.",
         num_iters=5,
         population_size=5,
         threshold=1.0,

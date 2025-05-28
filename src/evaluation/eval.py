@@ -1,5 +1,5 @@
 import pandas as pd
-from typing import Optional, Callable, Dict, Any
+from typing import Optional, Callable, Dict, Any, Literal
 from loguru import logger as logging
 from src.constants import LABEL_MAPPING, NUM_REPHRASED_SENTENCES, ORIGINAL_DATASET_PATH
 from src.evaluation.similarity_evaluator import SimiarityEvaluator
@@ -8,7 +8,7 @@ from src.synthesizer.aug_gpt_generator import AugGptRunner
 from src.synthesizer.generator import DataGenerator
 from src.synthesizer.models import AugmentedUserReviews, SentimentPrompt, UserReviews
 from src.utils import get_instructor_instance
-from openai.types.chat.chat_completion_message_param import (
+from openai.types.chat.chat_completion_system_message_param import (
     ChatCompletionSystemMessageParam,
 )
 
@@ -27,6 +27,9 @@ class Evaluator:
         self.similarity_evaluator = similarity_evaluator
         self.trainer_config = trainer_config or {}
         self.evaluator_config = evaluator_config or {}
+
+        if original_data_path is None:
+            raise ValueError("original_data_path cannot be None")
         self.original_data = pd.read_csv(original_data_path)
         self.data_generator = data_generator
 
@@ -80,7 +83,9 @@ class Evaluator:
         # TODO: might need to tweak this return output to make it more straightforward
         return synthesized_records, original_sentences, failed_sentences
 
-    def generate_full_synthetic_data(self, sentiment: str, prompt: str) -> str:
+    def generate_full_synthetic_data(
+        self, sentiment: Literal["neutral", "negative"], prompt: str
+    ) -> str:
         data = self.original_data.copy()
         data["Sentiment"] = data["Sentiment"].map(LABEL_MAPPING)
 
@@ -98,15 +103,15 @@ class Evaluator:
 
         return data_path
 
-    def create_hybrid_evaluator(self, sentiment: str, prompt: str) -> Callable:
+    def create_hybrid_evaluator(
+        self, sentiment: Literal["neutral", "negative"], prompt: str
+    ) -> Callable:
         """
         Create a hybrid evaluator that combines the trainer and similarity evaluators.
         This evaluator has to keep track of its state and iteration count.
         """
 
-        def hybrid_evaluator() -> float:
-            count = 0
-            count += 1
+        def hybrid_evaluator(count: int) -> float:
             if count == 5:
                 # NOTE: this pass for similarity evaluation only generate a subset of the data
                 return self.similarity_evaluator.run_evaluation(sentiment, prompt)
