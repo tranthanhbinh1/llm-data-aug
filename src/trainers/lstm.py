@@ -144,15 +144,45 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
             return_tensors="pt",
         )
 
-        # Convert labels to integers using LabelEncoder
-        label_encoder = LabelEncoder()
-        y_train = label_encoder.fit_transform(train_data["Sentiment"])
-        y_val = label_encoder.transform(val_data["Sentiment"])
-        y_test = label_encoder.transform(test_data["Sentiment"])
+        # Convert labels: first try LABEL_MAPPING (text to int), then LabelEncoder
+        logging.info(f"Unique labels in train data: {train_data['Sentiment'].unique()}")
 
-        # Log label distribution
+        # Try to convert text labels to integers using LABEL_MAPPING first
+        try:
+            # If labels are text, convert them to integers using LABEL_MAPPING
+            train_sentiment_mapped = [
+                LABEL_MAPPING[label] for label in train_data["Sentiment"]
+            ]
+            val_sentiment_mapped = [
+                LABEL_MAPPING[label] for label in val_data["Sentiment"]
+            ]
+            test_sentiment_mapped = [
+                LABEL_MAPPING[label] for label in test_data["Sentiment"]
+            ]
+            logging.info(
+                "Successfully converted text labels to integers using LABEL_MAPPING"
+            )
+            logging.info(f"LABEL_MAPPING used: {LABEL_MAPPING}")
+        except (KeyError, TypeError):
+            # If labels are already integers or conversion fails, use them as-is
+            train_sentiment_mapped = train_data["Sentiment"].tolist()
+            val_sentiment_mapped = val_data["Sentiment"].tolist()
+            test_sentiment_mapped = test_data["Sentiment"].tolist()
+            logging.info("Labels appear to be already numeric, using them directly")
+
+        # Now apply LabelEncoder for consistency
+        label_encoder = LabelEncoder()
+        y_train = label_encoder.fit_transform(train_sentiment_mapped)
+        y_val = label_encoder.transform(val_sentiment_mapped)
+        y_test = label_encoder.transform(test_sentiment_mapped)
+
+        # Log label distribution and mapping
         train_label_counts = np.bincount(y_train)
-        logging.info(f"Training label distribution: {train_label_counts}")
+        logging.info(f"Training label distribution by class: {train_label_counts}")
+        logging.info(f"Label encoder classes: {label_encoder.classes_}")
+        logging.info(
+            f"Final label mapping: {dict(zip(label_encoder.classes_, range(len(label_encoder.classes_))))}"
+        )
 
         return (
             (train_encodings, y_train),
@@ -231,7 +261,7 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
         logging.info(f"Training accuracy: {train_acc:.4f}")
 
         # Calculate class distribution of predictions
-        pred_counts = np.bincount(all_preds, minlength=len(LABEL_MAPPING))
+        pred_counts = np.bincount(all_preds, minlength=3)  # 3 classes for sentiment
         logging.info(f"Prediction distribution: {pred_counts}")
 
         return total_loss / max(1, num_batches)  # Return average loss
@@ -266,7 +296,7 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
         avg_loss = total_loss / len(data_loader)
 
         # Log prediction distribution
-        pred_counts = np.bincount(all_preds, minlength=len(LABEL_MAPPING))
+        pred_counts = np.bincount(all_preds, minlength=3)  # 3 classes for sentiment
 
         return avg_loss, accuracy, all_preds, all_labels, pred_counts
 
@@ -349,7 +379,7 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
         logging.info(f"F1 Score: {weighted_f1_score:.4f}")
         logging.info("\n" + str(classification_report(test_labels, test_preds)))
 
-        return weighted_f1_score
+        return float(weighted_f1_score)
 
     def run_training(self, batch_size=128, epochs=10, patience=3):
         """
@@ -447,7 +477,7 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
         hidden_dim1 = 128
         hidden_dim2 = 64
         dense_dim = 64
-        output_dim = len(LABEL_MAPPING)
+        output_dim = 3  # Number of sentiment classes
         dropout_rate = 0.5
         freeze_bert = True  # Freeze BERT weights for faster training and less memory
 
@@ -483,11 +513,16 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
         )
 
         # Run training pipeline and return score
-        return trainer.run_training(batch_size=128, epochs=10, patience=3)
+        return float(trainer.run_training(batch_size=128, epochs=10, patience=3))
 
 
 if __name__ == "__main__":
+    import argparse
     from src.preprocess.text_preprocessor import TextPreprocessor
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data-path", type=str, default=ORIGINAL_DATASET_PATH)
+    args = parser.parse_args()
 
     trainer = BERTLSTMTrainer(
         model=BERTLSTMModel(
@@ -495,12 +530,12 @@ if __name__ == "__main__":
             hidden_dim1=128,
             hidden_dim2=64,
             dense_dim=64,
-            output_dim=len(LABEL_MAPPING),
+            output_dim=3,  # Number of sentiment classes
             dropout_rate=0.5,
             freeze_bert=True,
         ),
-        data_path=ORIGINAL_DATASET_PATH,
-        preprocessor=TextPreprocessor(data=pd.read_csv(ORIGINAL_DATASET_PATH)),
+        data_path=args.data_path,
+        preprocessor=TextPreprocessor(data=pd.read_csv(args.data_path)),
     )
-    weighted_f1 = trainer.run_evaluation(ORIGINAL_DATASET_PATH)
+    weighted_f1 = trainer.run_evaluation(args.data_path)
     print(weighted_f1)

@@ -61,17 +61,33 @@ class PhoBertTrainer(TrainerEvaluatorRepository):
 
         # Extract sentences and labels
         train_sentences = train_data["tokenized_text"].tolist()
-        train_labels = [
-            LABEL_MAPPING[label] for label in train_data["Sentiment"].tolist()
-        ]
-
         val_sentences = val_data["tokenized_text"].tolist()
-        val_labels = [LABEL_MAPPING[label] for label in val_data["Sentiment"].tolist()]
-
         test_sentences = test_data["tokenized_text"].tolist()
-        test_labels = [
-            LABEL_MAPPING[label] for label in test_data["Sentiment"].tolist()
-        ]
+
+        # Convert labels: first try LABEL_MAPPING (text to int), then use directly
+        logging.info(f"Unique labels in train data: {train_data['Sentiment'].unique()}")
+
+        try:
+            # If labels are text, convert them to integers using LABEL_MAPPING
+            train_labels = [
+                LABEL_MAPPING[label] for label in train_data["Sentiment"].tolist()
+            ]
+            val_labels = [
+                LABEL_MAPPING[label] for label in val_data["Sentiment"].tolist()
+            ]
+            test_labels = [
+                LABEL_MAPPING[label] for label in test_data["Sentiment"].tolist()
+            ]
+            logging.info(
+                "Successfully converted text labels to integers using LABEL_MAPPING"
+            )
+            logging.info(f"LABEL_MAPPING used: {LABEL_MAPPING}")
+        except (KeyError, TypeError):
+            # If labels are already integers or conversion fails, use them as-is
+            train_labels = train_data["Sentiment"].tolist()
+            val_labels = val_data["Sentiment"].tolist()
+            test_labels = test_data["Sentiment"].tolist()
+            logging.info("Labels appear to be already numeric, using them directly")
 
         # Log dataset sizes
         logging.info(f"Train set size: {len(train_sentences)}")
@@ -272,15 +288,20 @@ class PhoBertTrainer(TrainerEvaluatorRepository):
 
 
 if __name__ == "__main__":
+    import argparse
     from src.preprocess.text_preprocessor import TextPreprocessor
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data-path", type=str, default=ORIGINAL_DATASET_PATH)
+    args = parser.parse_args()
 
     trainer = PhoBertTrainer(
         model=AutoModelForSequenceClassification.from_pretrained(
             "vinai/phobert-base-v2", num_labels=3
         ),
-        data_path=ORIGINAL_DATASET_PATH,
-        preprocessor=TextPreprocessor(data=pd.read_csv(ORIGINAL_DATASET_PATH)),
+        data_path=args.data_path,
+        preprocessor=TextPreprocessor(data=pd.read_csv(args.data_path)),
         tokenizer=AutoTokenizer.from_pretrained("vinai/phobert-base-v2"),
     )
-    weighted_f1 = trainer.run_evaluation(ORIGINAL_DATASET_PATH)
+    weighted_f1 = trainer.run_evaluation(args.data_path)
     print(weighted_f1)

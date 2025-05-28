@@ -1,4 +1,3 @@
-import time
 import pandas as pd
 from sklearn.metrics import classification_report, f1_score, accuracy_score
 import torch
@@ -15,11 +14,8 @@ from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
 from tqdm import tqdm
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader, RandomSampler, TensorDataset
-import argparse
-import os
-from src.constants import DATA_PATH, ORIGINAL_DATASET_PATH, SEED
+from src.constants import ORIGINAL_DATASET_PATH, SEED
 from src.repositories.preprocessor import PreprocessorRepository
-from src.utils import epoch_time
 from src.repositories.trainer import TrainerEvaluatorRepository
 
 
@@ -173,9 +169,32 @@ class CNNBertHybridTrainer(TrainerEvaluatorRepository):
         sentences: list,
         labels: list,
     ):
-        # Encode labels
+        # Convert labels: first try LABEL_MAPPING (text to int), then LabelEncoder
+        from src.constants import LABEL_MAPPING
+
+        logging.info(f"Unique labels in data: {set(labels)}")
+
+        # Try to convert text labels to integers using LABEL_MAPPING first
+        try:
+            # If labels are text, convert them to integers using LABEL_MAPPING
+            mapped_labels = [LABEL_MAPPING[label] for label in labels]
+            logging.info(
+                "Successfully converted text labels to integers using LABEL_MAPPING"
+            )
+            logging.info(f"LABEL_MAPPING used: {LABEL_MAPPING}")
+        except (KeyError, TypeError):
+            # If labels are already integers or conversion fails, use them as-is
+            mapped_labels = labels
+            logging.info("Labels appear to be already numeric, using them directly")
+
+        # Now apply LabelEncoder for consistency
         self.le = LabelEncoder()
-        encoded_labels = self.le.fit_transform(labels)
+        encoded_labels = self.le.fit_transform(mapped_labels)
+
+        logging.info(f"Label encoder classes: {self.le.classes_}")
+        logging.info(
+            f"Final label mapping: {dict(zip(self.le.classes_, range(len(self.le.classes_))))}"
+        )
 
         sentence_index, input_ids, attention_masks, encoded_label_tensors = (
             self.__encoder_generator(
@@ -492,13 +511,18 @@ class CNNBertHybridTrainer(TrainerEvaluatorRepository):
 
 
 if __name__ == "__main__":
+    import argparse
     from src.preprocess.text_preprocessor import TextPreprocessor
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data-path", type=str, default=ORIGINAL_DATASET_PATH)
+    args = parser.parse_args()
 
     trainer = CNNBertHybridTrainer(
         bert_model=AutoModel.from_pretrained("vinai/phobert-base-v2"),
-        preprocessor=TextPreprocessor(data=pd.read_csv(ORIGINAL_DATASET_PATH)),
-        data_path=ORIGINAL_DATASET_PATH,
+        preprocessor=TextPreprocessor(data=pd.read_csv(args.data_path)),
+        data_path=args.data_path,
         freeze_bert=True,
     )
-    weighted_f1 = trainer.run_evaluation(ORIGINAL_DATASET_PATH)
+    weighted_f1 = trainer.run_evaluation(args.data_path)
     print(weighted_f1)

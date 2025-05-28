@@ -1,4 +1,3 @@
-import os
 from sklearn.metrics import classification_report, f1_score, accuracy_score
 from sklearn.pipeline import Pipeline
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -14,7 +13,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 import argparse
 
-from src.constants import DATA_PATH, ORIGINAL_DATASET_PATH, SEED
+from src.constants import ORIGINAL_DATASET_PATH, SEED
 from src.repositories.trainer import TrainerEvaluatorRepository
 
 
