@@ -53,8 +53,8 @@ class SimiarityEvaluator(EvaluatorRepository):
         subset = data[data["Sentiment"] == DataGenerator.SENTIMENT_MAPPING[sentiment]]
         sampled_subset = subset.sample(frac=test_size, random_state=42)
 
-        # logger.info(f"Total {sentiment} records: {len(subset)}")
-        # logger.info(f"Sampled subset size: {len(sampled_subset)}")
+        logger.info(f"Total {sentiment} records: {len(subset)}")
+        logger.info(f"Sampled subset size: {len(sampled_subset)}")
         return sampled_subset
 
     # TODO: maybe this function should be detached
@@ -75,7 +75,7 @@ class SimiarityEvaluator(EvaluatorRepository):
         if not _original_sentences:
             raise ValueError("No sentences were prepared for generation")
 
-        synthesized_records, original_sentences, failed_sentences = (
+        synthesized_records, original_sentences, _ = (
             self._auggpt_runner._generate_reviews(
                 sentiment=sentiment,
                 user_prompt=SentimentPrompt.AUG_GPT_PROMPT,
@@ -88,9 +88,6 @@ class SimiarityEvaluator(EvaluatorRepository):
                 original_sentence_prompts=_original_sentence_prompts,
             )
         )
-
-        # if failed_sentences:
-        #     logger.warning(f"Failed to generate for {len(failed_sentences)} sentences")
 
         # Create a mapping between an original sentence and its corresponding records
         _original_sentence_to_records: dict[str, AugmentedUserReviews] = dict()
@@ -107,7 +104,7 @@ class SimiarityEvaluator(EvaluatorRepository):
             for original_sentence, augmented_reviews in _original_sentence_to_records.items()
         }
 
-        # logger.info(f"Generated {len(synthesized_records)} synthetic reviews")
+        logger.info(f"Generated {len(synthesized_records)} synthetic reviews")
         return original_sentence_to_synthesized_reviews
 
     def create_emebeddings(self, sentence_to_synthesized_reviews: dict[str, list[str]]):

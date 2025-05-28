@@ -21,12 +21,12 @@ def main():
         device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
         freeze_bert=True,
     )
-    evaluator = Evaluator(
-        trainer_evaluator=trainer_evaluator,
-        similarity_evaluator=SimiarityEvaluator(
-            auggpt_runner=AugGptRunner(get_instructor_instance()),
-        ),
-    )
+    # evaluator = Evaluator(
+    #     trainer_evaluator=trainer_evaluator,
+    #     similarity_evaluator=SimiarityEvaluator(
+    #         auggpt_runner=AugGptRunner(get_instructor_instance()),
+    #     ),
+    # )
 
     app = App(
         init_prompt="""
