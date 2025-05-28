@@ -6,19 +6,39 @@ from src.constants import DATA_PATH, PROJECT_ROOT
 from vncorenlp import VnCoreNLP
 
 
-# TODO: Needs to make this a Singleton, because a new VnCoreNLP instance is created for each instance of TextPreprocessor
 class TextPreprocessor(PreprocessorRepository):
+    # Class-level shared VnCoreNLP instance (lazy initialization)
+    _vncorenlp_instance = None
+    _vncorenlp_path = os.path.join(
+        PROJECT_ROOT, "notebooks", "VnCoreNLP", "VnCoreNLP-1.2.jar"
+    )
+
     def __init__(self, data: pd.DataFrame):
         self.data = data
         # Đường dẫn đến tệp chứa danh sách các từ viết tắt và định nghĩa tương ứng
         self.abbreviations_path = os.path.join(DATA_PATH, "abbreviate.txt")
         self.abbr = self.build_dictionary_from_file(self.abbreviations_path)
 
-        # Initialize VnCoreNLP
-        self.vncorenlp_path = os.path.join(
-            PROJECT_ROOT, "notebooks", "VnCoreNLP", "VnCoreNLP-1.2.jar"
-        )  # Thay đường dẫn đến VnCoreNLP.jar tại đây
-        self.vncorenlp = VnCoreNLP(self.vncorenlp_path)
+    @classmethod
+    def get_vncorenlp_instance(cls):
+        """Get shared VnCoreNLP instance, creating it only once when first needed."""
+        if cls._vncorenlp_instance is None:
+            print("Initializing VnCoreNLP instance (this may take a moment)...")
+            cls._vncorenlp_instance = VnCoreNLP(cls._vncorenlp_path)
+            print("VnCoreNLP instance initialized successfully.")
+        return cls._vncorenlp_instance
+
+    @property
+    def vncorenlp(self):
+        """Access the shared VnCoreNLP instance."""
+        return self.get_vncorenlp_instance()
+
+    @classmethod
+    def reset_vncorenlp_instance(cls):
+        """Reset the shared VnCoreNLP instance (useful for testing or cleanup)."""
+        if cls._vncorenlp_instance is not None:
+            print("Resetting VnCoreNLP instance.")
+            cls._vncorenlp_instance = None
 
     # Hàm normalize_repeated_words
     def normalize_repeated_words(self, text):
