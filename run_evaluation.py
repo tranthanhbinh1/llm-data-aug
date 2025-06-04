@@ -25,29 +25,22 @@ class EvaluationCounter:
         if os.path.exists(self.counter_file):
             with open(self.counter_file, "r") as file:
                 return json.load(file)
-        return {}
+        return {"global_count": 0}
 
     def _save_counts(self) -> None:
         """Save evaluation counts to file."""
         with open(self.counter_file, "w") as file:
             json.dump(self.counts, file, indent=2)
 
-    def get_count(self, sentiment: str, prompt_hash: str) -> int:
-        """Get current count for a sentiment-prompt combination."""
-        key = f"{sentiment}_{prompt_hash}"
-        return self.counts.get(key, 0)
+    def get_global_count(self) -> int:
+        """Get current global evaluation count."""
+        return self.counts.get("global_count", 0)
 
-    def increment_count(self, sentiment: str, prompt_hash: str) -> int:
-        """Increment and return the count for a sentiment-prompt combination."""
-        key = f"{sentiment}_{prompt_hash}"
-        self.counts[key] = self.counts.get(key, 0) + 1
+    def increment_global_count(self) -> int:
+        """Increment and return the global evaluation count."""
+        self.counts["global_count"] = self.counts.get("global_count", 0) + 1
         self._save_counts()
-        return self.counts[key]
-
-
-def get_prompt_hash(prompt: str) -> str:
-    """Generate a simple hash for the prompt to use as identifier."""
-    return str(hash(prompt) % 10000)
+        return self.counts["global_count"]
 
 
 # Wrapper script to run the evaluator
@@ -60,7 +53,7 @@ if __name__ == "__main__":
         type=int,
         required=False,
         default=5,
-        help="Number of subset evaluations before switching to full evaluation",
+        help="Run full evaluation every N evaluations",
     )
     parser.add_argument(
         "--reset-counter", action="store_true", help="Reset the evaluation counter"
@@ -75,6 +68,11 @@ if __name__ == "__main__":
         print("Evaluation counter reset.")
         exit(0)
 
+    # Get current count and increment
+    current_count = counter.increment_global_count()
+    print(f"Global evaluation run #{current_count} for sentiment: {args.sentiment}")
+
+    # Initialize evaluators
     trainer_evaluator = CNNBertHybridTrainer(
         bert_model=AutoModel.from_pretrained("vinai/phobert-base-v2"),
         preprocessor=TextPreprocessor(data=pd.read_csv(ORIGINAL_DATASET_PATH)),
@@ -84,29 +82,39 @@ if __name__ == "__main__":
         freeze_bert=True,
     )
 
-    evaluator = Evaluator(
-        trainer_evaluator=trainer_evaluator,
-        similarity_evaluator=SimiarityEvaluator(
-            auggpt_runner=AugGptRunner(get_instructor_instance()),
-        ),
+    similarity_evaluator = SimiarityEvaluator(
+        auggpt_runner=AugGptRunner(get_instructor_instance()),
     )
 
-    # Get current count and increment
-    prompt_hash = get_prompt_hash(args.prompt)
-    current_count = counter.increment_count(args.sentiment, prompt_hash)
+    evaluator = Evaluator(
+        trainer_evaluator=trainer_evaluator,
+        similarity_evaluator=similarity_evaluator,
+    )
 
-    print(f"Evaluation run #{current_count} for sentiment: {args.sentiment}")
+    # Decide evaluation strategy based on count
+    if current_count % args.full_eval_threshold == 0:
+        print(
+            f"🚀 Running FULL TRAINER evaluation (every {args.full_eval_threshold} evaluations)"
+        )
 
-    # Use hybrid evaluator based on count
-    if current_count >= args.full_eval_threshold:
-        print(f"Running FULL evaluation (threshold {args.full_eval_threshold} reached)")
-        hybrid_eval = evaluator.create_hybrid_evaluator(args.sentiment, args.prompt)
-        result = hybrid_eval(current_count)
-    else:
-        print(f"Running SUBSET evaluation ({current_count}/{args.full_eval_threshold})")
-        result = evaluator.evaluate(
+        # Generate full synthetic dataset and run trainer evaluation
+        data_path = evaluator.generate_full_synthetic_data(
             sentiment=args.sentiment,
             prompt=args.prompt,
         )
+        result = trainer_evaluator.run_evaluation(data_path=data_path)
+        print(f"📊 Trainer evaluation result: {result}")
 
-    print(f"Evaluation result: {result}")
+    else:
+        print(
+            f"⚡ Running SIMILARITY evaluation ({current_count % args.full_eval_threshold}/{args.full_eval_threshold})"
+        )
+
+        # Run similarity evaluation only
+        result = similarity_evaluator.run_evaluation(
+            sentiment=args.sentiment,
+            prompt=args.prompt,
+        )
+        print(f"📊 Similarity evaluation result: {result}")
+
+    print(f"Final result: {result}")

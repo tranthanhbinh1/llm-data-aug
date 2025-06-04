@@ -1,0 +1,21 @@
+{
+    "rules": [
+      {
+        "iteration_start": 0,
+        "iteration_end": 1,
+        "strategy": "similarity",
+        "frequency": 1
+      },
+      {
+        "iteration_start": 2,
+        "iteration_end": 4,
+        "strategy": "hybrid",
+        "frequency": 1
+      },
+      {
+        "iteration_start": 5,
+        "strategy": "trainer",
+        "frequency": 1
+      }
+    ]
+  }
