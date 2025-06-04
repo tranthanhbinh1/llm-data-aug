@@ -12,7 +12,7 @@ from openai.types.chat.chat_completion_message_param import (
 )
 from google import genai
 import pandas as pd
-from loguru import logger
+from loguru import logger as logging
 import time
 import os
 from dotenv import load_dotenv
@@ -34,7 +34,7 @@ class AugGptRunner:
     @classmethod
     def prepare_original_sentences(
         cls,
-        sentiment: Literal["neutral", "negative"],  # The minority classes
+        sentiment: str,  # The minority classes
         data: pd.DataFrame = pd.read_csv(ORIGINAL_DATASET_PATH),
     ) -> tuple[list[str], list[ChatCompletionUserMessageParam]]:
         """Get examples from the original dataset for each LLM call"""
@@ -43,23 +43,23 @@ class AugGptRunner:
 
         # Check if Sentiment is already mapped
         if data["Sentiment"].dtype == "object":
-            logger.info("Mapping sentiment labels to numeric values")
+            logging.info("Mapping sentiment labels to numeric values")
             data["Sentiment"] = data["Sentiment"].map(LABEL_MAPPING)
 
         target_sentiment = DataGenerator.SENTIMENT_MAPPING[sentiment]
-        logger.info(f"Filtering for sentiment {sentiment} (value: {target_sentiment})")
-        logger.info(f"Input data shape: {data.shape}")
-        logger.info(f"Sentiment value counts:\n{data['Sentiment'].value_counts()}")
+        logging.info(f"Filtering for sentiment {sentiment} (value: {target_sentiment})")
+        logging.info(f"Input data shape: {data.shape}")
+        logging.info(f"Sentiment value counts:\n{data['Sentiment'].value_counts()}")
 
         # Data of the minority classes
         minority_data = data[data["Sentiment"] == target_sentiment][
             ["Review", "Sentiment"]
         ].to_dict(orient="records")
 
-        logger.info(f"Found {len(minority_data)} records for sentiment {sentiment}")
+        logging.info(f"Found {len(minority_data)} records for sentiment {sentiment}")
 
         if not minority_data:
-            logger.warning(f"No records found for sentiment {sentiment}")
+            logging.warning(f"No records found for sentiment {sentiment}")
             return [], []
 
         # List of original sentences
@@ -76,7 +76,7 @@ class AugGptRunner:
 
     def _generate_reviews(
         self,
-        sentiment: Literal["neutral", "negative"],
+        sentiment: str,
         user_prompt: SentimentPrompt,
         augmentor_prompt: ChatCompletionSystemMessageParam = BASE_AUGMENTOR_PROMPT,
         model: str = "gemini-2.0-flash",
@@ -94,29 +94,28 @@ class AugGptRunner:
             )
 
         if not original_sentences or not original_sentence_prompts:
-            logger.warning("No sentences to process")
+            logging.warning("No sentences to process")
             return [], [], []
 
         failed_original_sentences = []
         batched_records: list[AugmentedUserReviews | UserReviews] = []
-        _hit_count = 0
 
         # Generate rephrased sentences for each original sentence
         for original_sentence, original_sentence_prompt in zip(
             original_sentences, original_sentence_prompts
         ):
             if index and original_sentences.index(original_sentence) < index:
-                logger.info(
+                logging.info(
                     f"Skipping sentence {original_sentences.index(original_sentence)} because continue from {index}"
                 )
                 continue
             try:
-                logger.info(f"Generating reviews for sentence: {original_sentence}")
-                logger.info(
+                logging.info(f"Generating reviews for sentence: {original_sentence}")
+                logging.info(
                     f"Sentence number: {original_sentences.index(original_sentence)}"
                 )
                 generated_samples: AugmentedUserReviews | UserReviews = (
-                    self.data_generator.generate_reviews(
+                    self.data_generator._generate_reviews(
                         [original_sentence_prompt],
                         user_prompt,
                         model,
@@ -124,17 +123,14 @@ class AugGptRunner:
                         augmentor_prompt,
                     )
                 )
-                logger.info(f"Generated reviews: {generated_samples}")
                 batched_records.append(generated_samples)
-                _hit_count += DataGenerator.MAX_RETRIES
-                logger.info(f"Hit count (including retries): {_hit_count}")
             except Exception as e:
                 failed_original_sentences.append(original_sentence)
                 if "429" in str(e):
-                    logger.error("Rate limit reached, sleeping for 60 seconds")
+                    logging.warning("Rate limit reached, sleeping for 60 seconds")
                     time.sleep(60)
                     continue
-                logger.error(f"Error generating reviews: {e}")
+                logging.warning(f"Error generating reviews: {e}")
                 continue
 
         return batched_records, original_sentences[index:], failed_original_sentences
@@ -146,15 +142,15 @@ class AugGptRunner:
         failed_sentences: list[str],
         model: str,
         sentiment: str,
-    ) -> None:
+    ) -> str:
         # Save the successful generations
         self.data_generator.save_reviews(
             batched_records,
             original_sentences,
             f"data/llm_generated/{model}/auggpt_augmented_user_reviews_{sentiment}.csv",
         )
-        logger.info(f"Saved {len(batched_records)} sentences")
-        logger.info(pd.DataFrame(batched_records).head().to_markdown())
+        logging.info(f"Saved {len(batched_records)} sentences")
+        logging.info(pd.DataFrame(batched_records).head().to_markdown())
 
         # Save the failed original sentences
         pd.DataFrame(failed_sentences).to_csv(
@@ -162,25 +158,32 @@ class AugGptRunner:
             index=False,
         )
 
+        # Return the data path
+        return (
+            f"data/llm_generated/{model}/auggpt_augmented_user_reviews_{sentiment}.csv"
+        )
+
     def generate_reviews_batch(
         self,
         sentiment: Literal["neutral", "negative"],
         user_prompt: SentimentPrompt,
+        augmentor_prompt: ChatCompletionSystemMessageParam = BASE_AUGMENTOR_PROMPT,
         model: str = "gemini-2.0-flash",
         num_to_generate: int = NUM_REPHRASED_SENTENCES,
         _: ChatCompletionSystemMessageParam = DataGenerator.BASE_SYSTEM_PROMPT,
         index: Optional[int] = 0,
-    ) -> list[AugmentedUserReviews | UserReviews]:
+    ) -> str:
         batched_records, original_sentences, failed_sentences = self._generate_reviews(
             sentiment=sentiment,
             user_prompt=user_prompt,
+            augmentor_prompt=augmentor_prompt,
             model=model,
             num_to_generate=num_to_generate,
             _=_,
             index=index,
         )
 
-        self.save_generated_reviews(
+        data_path = self.save_generated_reviews(
             batched_records,
             original_sentences,
             failed_sentences,
@@ -188,7 +191,7 @@ class AugGptRunner:
             sentiment,
         )
 
-        return batched_records
+        return data_path
 
 
 if __name__ == "__main__":

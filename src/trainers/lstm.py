@@ -1,5 +1,4 @@
 from datetime import datetime
-import os
 import pandas as pd
 from sklearn.metrics import classification_report, f1_score, accuracy_score
 import torch
@@ -13,16 +12,10 @@ from tqdm import tqdm
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader, TensorDataset
 from transformers import AutoTokenizer, AutoModel
-from src.utils import (
-    normalize_repeated_words,
-    remove_non_alphanumeric,
-    remove_special_characters,
-    expand_abbr,
-    tokenize_text,
-    abbr,
-)
-from src.constants import DATA_PATH, LABEL_MAPPING, PROJECT_ROOT
-import argparse
+from src.constants import LABEL_MAPPING, ORIGINAL_DATASET_PATH, PROJECT_ROOT, SEED
+
+from src.repositories.preprocessor import PreprocessorRepository
+from src.repositories.trainer import TrainerEvaluatorRepository
 
 
 class BERTLSTMModel(nn.Module):
@@ -77,13 +70,12 @@ class BERTLSTMModel(nn.Module):
         return x
 
 
-class BERTLSTMTrainer:
-    SEED = 42
-
+class BERTLSTMTrainer(TrainerEvaluatorRepository):
     def __init__(
         self,
         model: BERTLSTMModel,
         data_path: str,
+        preprocessor: PreprocessorRepository,
         tokenizer_name: str = "vinai/phobert-base-v2",
         max_length: int = 128,
         device: torch.device = torch.device(
@@ -94,7 +86,7 @@ class BERTLSTMTrainer:
         self.model = model
         self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
         self.max_length = max_length
-
+        self.preprocessor = preprocessor
         # Load data
         self.data = pd.read_csv(data_path)
         initial_rows = len(self.data)
@@ -106,38 +98,25 @@ class BERTLSTMTrainer:
             logging.warning(f"Removed {removed_rows} rows containing NaN values")
 
         # Set random seeds for reproducibility
-        random.seed(self.SEED)
-        np.random.seed(self.SEED)
-        torch.manual_seed(self.SEED)
-        torch.cuda.manual_seed(self.SEED)
+        random.seed(SEED)
+        np.random.seed(SEED)
+        torch.manual_seed(SEED)
+        torch.cuda.manual_seed(SEED)
         torch.backends.cudnn.deterministic = True
 
-    def _words_processing(self):
-        # Apply preprocessing functions to the 'review' column
-        self.data["Review"] = self.data["Review"].apply(
-            str.lower
-        )  # Chuyển đổi văn bản thành chữ thường trước khi xử lý
-        self.data["Review"] = self.data["Review"].apply(remove_non_alphanumeric)
-        self.data["Review"] = self.data["Review"].apply(lambda x: expand_abbr(x, abbr))
-        self.data["Review"] = self.data["Review"].apply(remove_special_characters)
-        self.data["Review"] = self.data["Review"].apply(normalize_repeated_words)
-        self.data["tokenized_text"] = self.data["Review"].apply(tokenize_text)
-
     def _prepare_data(self):
-        # Split the data
+        self.data = self.preprocessor.preprocess()
         train_data, test_data = train_test_split(
-            self.data, test_size=0.2, random_state=self.SEED
+            self.data, test_size=0.2, random_state=SEED
         )
         train_data, val_data = train_test_split(
-            train_data, test_size=0.2, random_state=self.SEED
+            train_data, test_size=0.2, random_state=SEED
         )
 
-        # Log dataset sizes
         logging.info(f"Train set size: {len(train_data)}")
         logging.info(f"Validation set size: {len(val_data)}")
         logging.info(f"Test set size: {len(test_data)}")
 
-        # Tokenize texts using BERT tokenizer
         train_encodings = self.tokenizer(
             train_data["tokenized_text"].tolist(),
             truncation=True,
@@ -162,15 +141,39 @@ class BERTLSTMTrainer:
             return_tensors="pt",
         )
 
-        # Convert labels to integers using LabelEncoder
-        label_encoder = LabelEncoder()
-        y_train = label_encoder.fit_transform(train_data["Sentiment"])
-        y_val = label_encoder.transform(val_data["Sentiment"])
-        y_test = label_encoder.transform(test_data["Sentiment"])
+        logging.info(f"Unique labels in train data: {train_data['Sentiment'].unique()}")
 
-        # Log label distribution
+        try:
+            train_sentiment_mapped = [
+                LABEL_MAPPING[label] for label in train_data["Sentiment"]
+            ]
+            val_sentiment_mapped = [
+                LABEL_MAPPING[label] for label in val_data["Sentiment"]
+            ]
+            test_sentiment_mapped = [
+                LABEL_MAPPING[label] for label in test_data["Sentiment"]
+            ]
+            logging.info(
+                "Successfully converted text labels to integers using LABEL_MAPPING"
+            )
+            logging.info(f"LABEL_MAPPING used: {LABEL_MAPPING}")
+        except (KeyError, TypeError):
+            train_sentiment_mapped = train_data["Sentiment"].tolist()
+            val_sentiment_mapped = val_data["Sentiment"].tolist()
+            test_sentiment_mapped = test_data["Sentiment"].tolist()
+            logging.info("Labels appear to be already numeric, using them directly")
+
+        label_encoder = LabelEncoder()
+        y_train = label_encoder.fit_transform(train_sentiment_mapped)
+        y_val = label_encoder.transform(val_sentiment_mapped)
+        y_test = label_encoder.transform(test_sentiment_mapped)
+
         train_label_counts = np.bincount(y_train)
-        logging.info(f"Training label distribution: {train_label_counts}")
+        logging.info(f"Training label distribution by class: {train_label_counts}")
+        logging.info(f"Label encoder classes: {label_encoder.classes_}")
+        logging.info(
+            f"Final label mapping: {dict(zip(label_encoder.classes_, range(len(label_encoder.classes_))))}"
+        )
 
         return (
             (train_encodings, y_train),
@@ -179,17 +182,14 @@ class BERTLSTMTrainer:
         )
 
     def load_data(self):
-        self._words_processing()
         (train_encodings, y_train), (val_encodings, y_val), (test_encodings, y_test) = (
             self._prepare_data()
         )
 
-        # Convert labels to tensors
         y_train_tensor = torch.tensor(y_train, dtype=torch.long)
         y_val_tensor = torch.tensor(y_val, dtype=torch.long)
         y_test_tensor = torch.tensor(y_test, dtype=torch.long)
 
-        # Create tensor datasets
         train_dataset = TensorDataset(
             train_encodings.input_ids, train_encodings.attention_mask, y_train_tensor
         )
@@ -220,13 +220,11 @@ class BERTLSTMTrainer:
             batch_attention_mask = batch_attention_mask.to(self.device)
             batch_labels = batch_labels.to(self.device)
 
-            # Clear gradients
             optimizer.zero_grad()
 
             # Forward pass
             outputs = self.model(batch_input_ids, batch_attention_mask)
 
-            # Calculate loss
             loss = criterion(outputs, batch_labels)
 
             # Backward pass and optimize
@@ -242,15 +240,12 @@ class BERTLSTMTrainer:
             all_preds.extend(preds.cpu().numpy())
             all_labels.extend(batch_labels.cpu().numpy())
 
-            # Update progress bar with current loss
             progress_bar.set_postfix(loss=f"{loss.item():.4f}")
 
-        # Calculate training accuracy
         train_acc = accuracy_score(all_labels, all_preds)
         logging.info(f"Training accuracy: {train_acc:.4f}")
 
-        # Calculate class distribution of predictions
-        pred_counts = np.bincount(all_preds, minlength=len(LABEL_MAPPING))
+        pred_counts = np.bincount(all_preds, minlength=3)  # 3 classes for sentiment
         logging.info(f"Prediction distribution: {pred_counts}")
 
         return total_loss / max(1, num_batches)  # Return average loss
@@ -263,7 +258,6 @@ class BERTLSTMTrainer:
         all_labels = []
 
         for batch_input_ids, batch_attention_mask, batch_labels in data_loader:
-            # Move tensors to device
             batch_input_ids = batch_input_ids.to(self.device)
             batch_attention_mask = batch_attention_mask.to(self.device)
             batch_labels = batch_labels.to(self.device)
@@ -280,12 +274,10 @@ class BERTLSTMTrainer:
             all_preds.extend(preds.cpu().numpy())
             all_labels.extend(batch_labels.cpu().numpy())
 
-        # Calculate metrics
         accuracy = accuracy_score(all_labels, all_preds)
         avg_loss = total_loss / len(data_loader)
 
-        # Log prediction distribution
-        pred_counts = np.bincount(all_preds, minlength=len(LABEL_MAPPING))
+        pred_counts = np.bincount(all_preds, minlength=3)  # 3 classes for sentiment
 
         return avg_loss, accuracy, all_preds, all_labels, pred_counts
 
@@ -310,10 +302,8 @@ class BERTLSTMTrainer:
             # Training phase
             train_loss = self.train(optimizer, criterion, train_loader)
 
-            # Validation phase
             val_loss, val_acc, _, _, pred_counts = self.evaluate(criterion, val_loader)
 
-            # Update progress bar with metrics
             epoch_progress.set_postfix(
                 train_loss=f"{train_loss:.4f}",
                 val_loss=f"{val_loss:.4f}",
@@ -340,7 +330,6 @@ class BERTLSTMTrainer:
             else:
                 patience_counter += 1
 
-            # Early stopping
             if patience_counter >= patience:
                 logging.info(f"Early stopping triggered at epoch {epoch + 1}")
                 break
@@ -368,120 +357,154 @@ class BERTLSTMTrainer:
         logging.info(f"F1 Score: {weighted_f1_score:.4f}")
         logging.info("\n" + str(classification_report(test_labels, test_preds)))
 
+        return float(weighted_f1_score)
+
+    def run_training(self, batch_size=128, epochs=10, patience=3):
+        """
+        Run the complete training pipeline from data loading to evaluation
+
+        Args:
+            batch_size: Size of batches for training
+            epochs: Number of training epochs
+            patience: Number of epochs to wait before early stopping
+
+        Returns:
+            float: Weighted F1 score from test set evaluation
+        """
+        train_dataset, val_dataset, test_dataset = self.load_data()
+
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=batch_size,
+            shuffle=True,
+        )
+
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=batch_size,
+        )
+
+        test_loader = DataLoader(
+            test_dataset,
+            batch_size=batch_size,
+        )
+
+        # Setup training
+        criterion = nn.CrossEntropyLoss()
+
+        # Check if BERT is frozen
+        freeze_bert = not any(p.requires_grad for p in self.model.bert.parameters())
+
+        if not freeze_bert:
+            # Parameters with different learning rates
+            bert_params = list(self.model.bert.parameters())
+            non_bert_params = (
+                list(self.model.lstm1.parameters())
+                + list(self.model.lstm2.parameters())
+                + list(self.model.dense1.parameters())
+                + list(self.model.dropout.parameters())
+                + list(self.model.dense2.parameters())
+            )
+
+            optimizer = torch.optim.AdamW(
+                [
+                    {"params": bert_params, "lr": 2e-5},  # Lower learning rate for BERT
+                    {
+                        "params": non_bert_params,
+                        "lr": 1e-3,
+                    },  # Higher learning rate for LSTM layers
+                ],
+                weight_decay=1e-5,
+            )
+        else:
+            optimizer = torch.optim.AdamW(
+                self.model.parameters(), lr=1e-3, weight_decay=1e-5
+            )
+
+        self.training_loop(
+            optimizer,
+            criterion,
+            train_loader,
+            val_loader,
+            epochs=epochs,
+            patience=patience,
+        )
+
+        weighted_f1_score = self.final_evaluate(test_loader)
+
         return weighted_f1_score
+
+    def run_evaluation(self, data_path: str) -> float:
+        """Run evaluation on the model using the given sentiment and prompt.
+
+        Args:
+            sentiment: The sentiment to evaluate on
+            prompt: The prompt to use for evaluation
+
+        Returns:
+            float: The weighted F1 score from the evaluation
+        """
+        # Configuration
+        bert_model_name = "vinai/phobert-base-v2"
+        hidden_dim1 = 128
+        hidden_dim2 = 64
+        dense_dim = 64
+        output_dim = 3  # Number of sentiment classes
+        dropout_rate = 0.5
+        freeze_bert = True  # Freeze BERT weights
+
+        model = BERTLSTMModel(
+            bert_model_name=bert_model_name,
+            hidden_dim1=hidden_dim1,
+            hidden_dim2=hidden_dim2,
+            dense_dim=dense_dim,
+            output_dim=output_dim,
+            dropout_rate=dropout_rate,
+            freeze_bert=freeze_bert,
+        )
+
+        # Log parameter count
+        total_params = sum(p.numel() for p in model.parameters())
+        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        logging.info(f"Total parameters: {total_params:,}")
+        logging.info(f"Trainable parameters: {trainable_params:,}")
+        logging.info(f"BERT parameters frozen: {freeze_bert}")
+
+        # TODO: dirty import, fix later
+        from src.preprocess.text_preprocessor import TextPreprocessor
+
+        preprocessor = TextPreprocessor(data=pd.read_csv(data_path))
+        trainer = BERTLSTMTrainer(
+            model=model,
+            data_path=data_path,
+            tokenizer_name=bert_model_name,
+            max_length=128,
+            preprocessor=preprocessor,
+        )
+
+        return float(trainer.run_training(batch_size=128, epochs=10, patience=3))
 
 
 if __name__ == "__main__":
+    import argparse
+    from src.preprocess.text_preprocessor import TextPreprocessor
+
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--data_path",
-        type=str,
-        default=os.path.join(
-            DATA_PATH,
-            "llm_generated/gemini-2.0-flash/auggpt_upsampled_user_reviews_cleaned.csv",
-        ),
-    )
+    parser.add_argument("--data-path", type=str, default=ORIGINAL_DATASET_PATH)
     args = parser.parse_args()
 
-    # Configuration
-    bert_model_name = "vinai/phobert-base-v2"
-    hidden_dim1 = 128
-    hidden_dim2 = 64
-    dense_dim = 64
-    output_dim = len(LABEL_MAPPING)
-    dropout_rate = 0.5
-    freeze_bert = True  # Freeze BERT weights for faster training and less memory
-
-    # Create model
-    model = BERTLSTMModel(
-        bert_model_name=bert_model_name,
-        hidden_dim1=hidden_dim1,
-        hidden_dim2=hidden_dim2,
-        dense_dim=dense_dim,
-        output_dim=output_dim,
-        dropout_rate=dropout_rate,
-        freeze_bert=freeze_bert,
-    )
-
-    # Log parameter count
-    total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    logging.info(f"Total parameters: {total_params:,}")
-    logging.info(f"Trainable parameters: {trainable_params:,}")
-    logging.info(f"BERT parameters frozen: {freeze_bert}")
-
-    # Create trainer
     trainer = BERTLSTMTrainer(
-        model=model,
-        data_path=os.path.join(
-            DATA_PATH,
-            "llm_generated/gemini-2.0-flash/auggpt_upsampled_user_reviews_cleaned.csv",
+        model=BERTLSTMModel(
+            bert_model_name="vinai/phobert-base-v2",
+            hidden_dim1=128,
+            hidden_dim2=64,
+            dense_dim=64,
+            output_dim=3,  # Number of sentiment classes
+            dropout_rate=0.5,
+            freeze_bert=True,
         ),
-        tokenizer_name=bert_model_name,
-        max_length=128,
+        data_path=args.data_path,
+        preprocessor=TextPreprocessor(data=pd.read_csv(args.data_path)),
     )
-
-    # Load and prepare data
-    train_dataset, val_dataset, test_dataset = trainer.load_data()
-
-    # Create data loaders
-    batch_size = 128
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-    )
-
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=batch_size,
-    )
-
-    test_loader = DataLoader(
-        test_dataset,
-        batch_size=batch_size,
-    )
-
-    # Setup training
-    criterion = nn.CrossEntropyLoss()
-
-    # Use different learning rates for BERT and LSTM parts if BERT is not frozen
-    if not freeze_bert:
-        # Parameters with different learning rates
-        bert_params = list(model.bert.parameters())
-        non_bert_params = (
-            list(model.lstm1.parameters())
-            + list(model.lstm2.parameters())
-            + list(model.dense1.parameters())
-            + list(model.dropout.parameters())
-            + list(model.dense2.parameters())
-        )
-
-        optimizer = torch.optim.AdamW(
-            [
-                {"params": bert_params, "lr": 2e-5},  # Lower learning rate for BERT
-                {
-                    "params": non_bert_params,
-                    "lr": 1e-3,
-                },  # Higher learning rate for LSTM layers
-            ],
-            weight_decay=1e-5,
-        )
-    else:
-        # If BERT is frozen, use single learning rate for all trainable parameters
-        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-5)
-
-    # Train model
-    trainer.training_loop(
-        optimizer,
-        criterion,
-        train_loader,
-        val_loader,
-        epochs=10,
-        patience=3,
-    )
-
-    # Final evaluation
-    weighted_f1_score = trainer.final_evaluate(test_loader)
-
-    print(weighted_f1_score)
+    weighted_f1 = trainer.run_evaluation(args.data_path)
+    print(weighted_f1)

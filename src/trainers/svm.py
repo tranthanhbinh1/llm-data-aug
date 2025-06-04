@@ -1,4 +1,3 @@
-import os
 from sklearn.metrics import classification_report, f1_score, accuracy_score
 from sklearn.pipeline import Pipeline
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -14,20 +13,11 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 import argparse
 
-from src.constants import DATA_PATH
-from src.utils import (
-    expand_abbr,
-    remove_non_alphanumeric,
-    remove_special_characters,
-    normalize_repeated_words,
-    tokenize_text,
-    abbr,
-)
+from src.constants import ORIGINAL_DATASET_PATH, SEED
+from src.repositories.trainer import TrainerEvaluatorRepository
 
 
-class SVMTrainer:
-    SEED = 42
-
+class SVMTrainer(TrainerEvaluatorRepository):
     def __init__(
         self,
         data_path: str,
@@ -50,21 +40,13 @@ class SVMTrainer:
         if removed_rows > 0:
             logging.warning(f"Removed {removed_rows} rows containing NaN values")
 
-        random.seed(self.SEED)
-        np.random.seed(self.SEED)
-
-    def _words_processing(self):
-        self.data["Review"] = self.data["Review"].apply(str.lower)
-        self.data["Review"] = self.data["Review"].apply(remove_non_alphanumeric)
-        self.data["Review"] = self.data["Review"].apply(lambda x: expand_abbr(x, abbr))
-        self.data["Review"] = self.data["Review"].apply(remove_special_characters)
-        self.data["Review"] = self.data["Review"].apply(normalize_repeated_words)
-        self.data["tokenized_text"] = self.data["Review"].apply(tokenize_text)
+        random.seed(SEED)
+        np.random.seed(SEED)
 
     def _prepare_data(self):
         # First split the data
         train_data, val_data = train_test_split(
-            self.data, test_size=0.2, random_state=self.SEED
+            self.data, test_size=0.2, random_state=SEED
         )
 
         # Log dataset sizes
@@ -87,7 +69,7 @@ class SVMTrainer:
         return (X_train, y_train), (X_val, y_val)
 
     def load_data(self):
-        self._words_processing()
+        # self._words_processing()
         return self._prepare_data()
 
     def train(self, X_train, y_train, X_val, y_val):
@@ -112,10 +94,25 @@ class SVMTrainer:
         logging.info(f"Prediction distribution: {pred_counts}")
 
         logging.info("\n" + str(classification_report(y_val, y_pred_svc)))
-        f1 = f1_score(y_val, y_pred_svc, average="weighted")
-        logging.info(f"F1 Score: {f1:.4f}")
+        weighted_f1 = f1_score(y_val, y_pred_svc, average="weighted")
+        logging.info(f"F1 Score: {weighted_f1:.4f}")
 
-        return f1
+        return weighted_f1
+
+    def run_evaluation(self):
+        """
+        Run the complete training pipeline from data loading to evaluation
+
+        Returns:
+            float: F1 score from validation
+        """
+        # Load and prepare data
+        (X_train, y_train), (X_val, y_val) = self.load_data()
+
+        # Train model and get F1 score
+        weighted_f1 = self.train(X_train, y_train, X_val, y_val)
+
+        return weighted_f1
 
 
 if __name__ == "__main__":
@@ -123,16 +120,11 @@ if __name__ == "__main__":
     parser.add_argument(
         "--data_path",
         type=str,
-        default=os.path.join(
-            DATA_PATH,
-            "llm_generated/gemini-2.0-flash/auggpt_upsampled_user_reviews_cleaned.csv",
-        ),
+        default=ORIGINAL_DATASET_PATH,
     )
     args = parser.parse_args()
 
     svm_trainer = SVMTrainer(data_path=args.data_path)
+    weighted_f1 = svm_trainer.run_evaluation()
 
-    (X_train, y_train), (X_val, y_val) = svm_trainer.load_data()
-    f1 = svm_trainer.train(X_train, y_train, X_val, y_val)
-
-    print(f1)
+    print(weighted_f1)

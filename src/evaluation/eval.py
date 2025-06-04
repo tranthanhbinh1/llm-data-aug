@@ -1,135 +1,131 @@
-import os
-import torch
 import pandas as pd
-import numpy as np
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
-from sklearn.metrics import accuracy_score
-from torch.utils.data import DataLoader
-from sklearn.metrics import classification_report
-from dataloaders.train_test_split import DataScenario
-from dataloaders.custom_dataset import CustomDataset
-from loguru import logger
-from transformers.tokenization_utils import PreTrainedTokenizer
-from transformers.tokenization_utils_fast import PreTrainedTokenizerFast
+from typing import Optional, Callable, Dict, Any, Literal
+from loguru import logger as logging
+from src.constants import LABEL_MAPPING, NUM_REPHRASED_SENTENCES, ORIGINAL_DATASET_PATH
+from src.evaluation.similarity_evaluator import SimiarityEvaluator
+from src.repositories.trainer import TrainerEvaluatorRepository
+from src.synthesizer.aug_gpt_generator import AugGptRunner
+from src.synthesizer.generator import DataGenerator
+from src.synthesizer.models import AugmentedUserReviews, SentimentPrompt, UserReviews
+from src.utils import get_instructor_instance
+from openai.types.chat.chat_completion_system_message_param import (
+    ChatCompletionSystemMessageParam,
+)
 
 
 class Evaluator:
-    DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-    def prepare_data(self, data_scenario: DataScenario):
-        train_data = pd.read_csv(
-            os.path.join(
-                f"data/{data_scenario.lower()}",
-                f"train_{data_scenario.lower()}_user_reviews.csv",
-            )
-        )
-        val_data = pd.read_csv(
-            os.path.join(
-                f"data/{data_scenario.lower()}",
-                f"val_{data_scenario.lower()}_user_reviews.csv",
-            )
-        )
-        test_data = pd.read_csv(
-            os.path.join(
-                f"data/{data_scenario.lower()}",
-                f"test_{data_scenario.lower()}_user_reviews.csv",
-            )
-        )
-
-        # Detached the data frames to train texts, lables, val texts, val labels, test texts, test labels
-        train_texts = train_data["text"].tolist()
-        train_labels = train_data["label"].tolist()
-        val_texts = val_data["text"].tolist()
-        val_labels = val_data["label"].tolist()
-        test_texts = test_data["text"].tolist()
-        test_labels = test_data["label"].tolist()
-
-        return train_texts, train_labels, val_texts, val_labels, test_texts, test_labels
-
-    def load_model(self, model_name: str):
-        model = AutoModelForSequenceClassification.from_pretrained(
-            os.path.join(self.PROJECT_ROOT, "models", model_name)
-        )
-        model.to(self.DEVICE)
-        return model
-
-    def evaluate(
+    def __init__(
         self,
-        model: torch.nn.Module,
-        test_loader: DataLoader,
-        data_scenario: DataScenario,
+        trainer_evaluator: TrainerEvaluatorRepository,
+        similarity_evaluator: SimiarityEvaluator,
+        trainer_config: Optional[Dict[str, Any]] = None,
+        evaluator_config: Optional[Dict[str, Any]] = None,
+        original_data_path: Optional[str] = ORIGINAL_DATASET_PATH,
+        data_generator: AugGptRunner = AugGptRunner(get_instructor_instance()),
     ):
-        # Evaluation on test set
-        model.eval()
-        predictions = []
-        true_labels = []
+        self.trainer_evaluator = trainer_evaluator
+        self.similarity_evaluator = similarity_evaluator
+        self.trainer_config = trainer_config or {}
+        self.evaluator_config = evaluator_config or {}
 
-        with torch.no_grad():
-            for batch in test_loader:
-                input_ids = batch["input_ids"].to(self.DEVICE)
-                attention_mask = batch["attention_mask"].to(self.DEVICE)
-                labels = batch["labels"].to(self.DEVICE)
+        if original_data_path is None:
+            raise ValueError("original_data_path cannot be None")
+        self.original_data = pd.read_csv(original_data_path)
+        self.data_generator = data_generator
 
-                outputs = model(
-                    input_ids=input_ids, attention_mask=attention_mask, labels=labels
+    def random_split(
+        self,
+        sentiment: str,
+        test_size: float = 0.05,
+    ) -> pd.DataFrame:
+        data = self.original_data.copy()
+        data["Sentiment"] = data["Sentiment"].map(LABEL_MAPPING)
+
+        # Filter first, then sample
+        subset = data[data["Sentiment"] == DataGenerator.SENTIMENT_MAPPING[sentiment]]
+        sampled_subset = subset.sample(frac=test_size, random_state=42)
+
+        logging.info(f"Total {sentiment} records: {len(subset)}")
+        logging.info(f"Sampled subset size: {len(sampled_subset)}")
+        return sampled_subset
+
+    def genereate_subset_synthetic_data(
+        self, sentiment: str, prompt: str
+    ) -> tuple[list[AugmentedUserReviews | UserReviews], list[str], list[str]]:
+        subset = self.random_split(sentiment=sentiment)
+        if subset.empty:
+            raise ValueError(f"No {sentiment} records found in the dataset")
+
+        _original_sentences, _original_sentence_prompts = (
+            self.data_generator.prepare_original_sentences(
+                sentiment=sentiment,
+                data=subset,
+            )
+        )
+
+        if not _original_sentences:
+            raise ValueError("No sentences were prepared for generation")
+
+        synthesized_records, original_sentences, failed_sentences = (
+            self.data_generator._generate_reviews(
+                sentiment=sentiment,
+                user_prompt=SentimentPrompt.AUG_GPT_PROMPT,
+                augmentor_prompt=ChatCompletionSystemMessageParam(
+                    role="system",
+                    content=prompt,
+                ),
+                num_to_generate=NUM_REPHRASED_SENTENCES,
+                original_sentences=_original_sentences,
+                original_sentence_prompts=_original_sentence_prompts,
+            )
+        )
+
+        # TODO: might need to tweak this return output to make it more straightforward
+        return synthesized_records, original_sentences, failed_sentences
+
+    def generate_full_synthetic_data(
+        self, sentiment: Literal["neutral", "negative"], prompt: str
+    ) -> str:
+        data = self.original_data.copy()
+        data["Sentiment"] = data["Sentiment"].map(LABEL_MAPPING)
+
+        # Generate full dataset
+        data_path = self.data_generator.generate_reviews_batch(
+            sentiment=sentiment,
+            user_prompt=SentimentPrompt.AUG_GPT_PROMPT,
+            augmentor_prompt=ChatCompletionSystemMessageParam(
+                role="system",
+                content=prompt,
+            ),
+            num_to_generate=NUM_REPHRASED_SENTENCES,
+            model="gemini-2.0-flash",
+        )
+
+        return data_path
+
+    def create_hybrid_evaluator(
+        self, sentiment: Literal["neutral", "negative"], prompt: str
+    ) -> Callable:
+        """
+        Create a hybrid evaluator that combines the trainer and similarity evaluators.
+        This evaluator has to keep track of its state and iteration count.
+        """
+
+        def hybrid_evaluator(count: int) -> float:
+            if count == 5:
+                # NOTE: this pass for similarity evaluation only generate a subset of the data
+                return self.similarity_evaluator.run_evaluation(sentiment, prompt)
+            else:
+                # This pass generate a full synthetic dataset so our trainers can execute the full evaluation suite
+                data_path = self.generate_full_synthetic_data(
+                    sentiment=sentiment,
+                    prompt=prompt,
                 )
-                logits = outputs.logits
+                return self.trainer_evaluator.run_evaluation(
+                    data_path=data_path,
+                )
 
-                _, predicted = torch.max(logits, 1)
-                predictions.extend(predicted.cpu().numpy())
-                true_labels.extend(labels.cpu().numpy())
+        return hybrid_evaluator
 
-        # Convert predictions and true labels to numpy arrays
-        predictions = np.array(predictions)
-        true_labels = np.array(true_labels)
-
-        # Calculate classification report
-        target_names = ["Label 0", "Label 1", "Label 2"]  # Specify label names
-        logger.info(
-            classification_report(true_labels, predictions, target_names=target_names)
-        )
-        logger.info("Accuracy: {}".format(accuracy_score(true_labels, predictions)))
-
-        # save_classification_report(
-        #     true_labels, predictions, target_names, self.PROJECT_ROOT, data_scenario
-        # )
-
-        return true_labels, predictions
-
-    def run_evaluation(
-        self,
-        model_name: str,
-        data_scenario: DataScenario,
-        tokenizer: PreTrainedTokenizer | PreTrainedTokenizerFast,
-        max_length: int,
-    ):
-        train_texts, train_labels, val_texts, val_labels, test_texts, test_labels = (
-            self.prepare_data(data_scenario)
-        )
-        test_dataset = CustomDataset(test_texts, test_labels, tokenizer, max_length)
-        test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False)
-        model = self.load_model(model_name)
-        true_labels, predictions = self.evaluate(model, test_loader, data_scenario)
-
-        return true_labels, predictions
-
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--model_name", type=str, required=True)
-    parser.add_argument("--data_scenario", type=str, required=True)
-    parser.add_argument("--tokenizer", type=str, required=True)
-    parser.add_argument("--max_length", type=int, required=True)
-    args = parser.parse_args()
-
-    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
-
-    # tokenizer = AutoTokenizer.from_pretrained("vinai/phobert-base")
-
-    evaluator = Evaluator()
-    evaluator.run_evaluation(
-        args.model_name, args.data_scenario, tokenizer, args.max_length
-    )
+    def evaluate(self, sentiment: str, prompt: str) -> float:
+        return self.similarity_evaluator.run_evaluation(sentiment, prompt)

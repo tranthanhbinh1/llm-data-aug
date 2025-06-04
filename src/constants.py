@@ -2,6 +2,7 @@ import os
 
 NUM_REPHRASED_SENTENCES = 6
 
+SEED = 42
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_PATH = os.path.join(PROJECT_ROOT, "data")

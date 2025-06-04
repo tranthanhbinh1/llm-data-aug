@@ -9,27 +9,29 @@
 ## 7. Report the average similarity score
 
 
-from typing import Literal, cast
+from typing import cast
 import pandas as pd
 import torch
 from loguru import logger
 from sentence_transformers import SentenceTransformer
 
+from src.repositories.evaluator import EvaluatorRepository
+
 from ..constants import LABEL_MAPPING, NUM_REPHRASED_SENTENCES
-from synthesizer.generator import DataGenerator
-from synthesizer.models import (
+from ..synthesizer.generator import DataGenerator
+from ..synthesizer.models import (
     AugmentedUserReviews,
     SentimentPrompt,
 )
 from openai.types.chat.chat_completion_message_param import (
     ChatCompletionSystemMessageParam,
 )
-from synthesizer.runner import AugGptRunner
+from src.synthesizer.aug_gpt_generator import AugGptRunner
 from ..utils import get_instructor_instance
 from ..constants import ORIGINAL_DATASET_PATH
 
 
-class PromptEvaluator:
+class SimiarityEvaluator(EvaluatorRepository):
     def __init__(
         self,
         auggpt_runner: AugGptRunner,
@@ -41,7 +43,7 @@ class PromptEvaluator:
 
     def random_split(
         self,
-        sentiment: Literal["neutral", "negative"],
+        sentiment: str,
         test_size: float = 0.05,
     ) -> pd.DataFrame:
         data = self._original_data.copy()
@@ -55,8 +57,9 @@ class PromptEvaluator:
         logger.info(f"Sampled subset size: {len(sampled_subset)}")
         return sampled_subset
 
+    # TODO: maybe this function should be detached
     def generate_synthetic_data(
-        self, sentiment: Literal["neutral", "negative"], prompt: str
+        self, sentiment: str, prompt: str
     ) -> dict[str, list[str]]:
         subset = self.random_split(sentiment=sentiment)
         if subset.empty:
@@ -72,7 +75,7 @@ class PromptEvaluator:
         if not _original_sentences:
             raise ValueError("No sentences were prepared for generation")
 
-        synthesized_records, original_sentences, failed_sentences = (
+        synthesized_records, original_sentences, _ = (
             self._auggpt_runner._generate_reviews(
                 sentiment=sentiment,
                 user_prompt=SentimentPrompt.AUG_GPT_PROMPT,
@@ -85,9 +88,6 @@ class PromptEvaluator:
                 original_sentence_prompts=_original_sentence_prompts,
             )
         )
-
-        if failed_sentences:
-            logger.warning(f"Failed to generate for {len(failed_sentences)} sentences")
 
         # Create a mapping between an original sentence and its corresponding records
         _original_sentence_to_records: dict[str, AugmentedUserReviews] = dict()
@@ -164,9 +164,9 @@ class PromptEvaluator:
 
         return overall_mean
 
-    def main(
+    def run_evaluation(
         self,
-        sentiment: Literal["neutral", "negative"],
+        sentiment: str,
         prompt: str,
     ):
         sentence_to_synthesized_reviews = self.generate_synthetic_data(
@@ -185,10 +185,10 @@ if __name__ == "__main__":
 
     load_dotenv()
 
-    evaluator = PromptEvaluator(AugGptRunner(get_instructor_instance()))
-    average_cosine_similarity = evaluator.main(
+    evaluator = SimiarityEvaluator(AugGptRunner(get_instructor_instance()))
+    average_cosine_similarity = evaluator.run_evaluation(
         sentiment="neutral",
         prompt="Bạn là một trợ lý hữu ích, có nhiệm vụ diễn đạt lại văn bản và làm cho câu văn trở nên mượt mà hơn.",
     )
 
-    logger.info(f"Average cosine similarity: {average_cosine_similarity}")
+    # logger.info(f"Average cosine similarity: {average_cosine_similarity}")
