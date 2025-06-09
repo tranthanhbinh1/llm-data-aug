@@ -1,0 +1,4 @@
+load_from:
+    - python_module:
+          module_name: worker.campaign_worker # TODO: need to change this
+          location_name: worker
