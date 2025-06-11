@@ -4,10 +4,12 @@ Example usage of the prompt optimization system.
 
 import asyncio
 import os
-from typing import Tuple
+from dotenv import load_dotenv
 
 from .models import PromptCandidate, OptimizationConfig
 from .optimizer import PromptOptimizer
+
+load_dotenv()
 
 
 async def custom_evaluator_example(
@@ -103,7 +105,15 @@ async def custom_evaluator_example_run():
 
     # Configure optimization
     config = OptimizationConfig(
-        population_size=3, num_iterations=2, num_elites=1, threshold=0.8
+        population_size=3,
+        num_iterations=2,
+        num_elites=1,
+        threshold=0.8,
+        tournament_size=3,
+        num_evaluation_samples=2,
+        model="gemini-2.0-flash",
+        temperature=1.0,
+        max_retries=3,
     )
 
     # Create optimizer
@@ -145,7 +155,17 @@ async def progress_example():
         return
 
     # Configure optimization
-    config = OptimizationConfig(population_size=3, num_iterations=3, num_elites=1)
+    config = OptimizationConfig(
+        population_size=3,
+        num_iterations=3,
+        num_elites=1,
+        threshold=0.9,
+        num_evaluation_samples=2,
+        tournament_size=3,
+        model="gemini-2.0-flash",
+        temperature=1.0,
+        max_retries=3,
+    )
 
     # Create optimizer
     optimizer = PromptOptimizer(api_key=api_key, config=config)

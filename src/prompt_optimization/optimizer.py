@@ -147,7 +147,7 @@ class PromptOptimizer:
             execution_time_seconds=execution_time,
             convergence_iteration=convergence_iteration,
             all_candidates=all_candidates,
-            metadata=self.config.to_dict(),
+            metadata=self.config.model_dump(),
         )
 
         logger.info("Optimization completed")

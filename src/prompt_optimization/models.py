@@ -1,6 +1,6 @@
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, model_validator
 
 
 class PromptCandidate(BaseModel):
@@ -16,17 +16,17 @@ class PromptCandidate(BaseModel):
         default_factory=list, description="IDs of parent prompts"
     )
 
-    @field_validator("fitness")
-    def validate_fitness(cls, v):
-        if v is not None and (v < 0.0 or v > 1.0):
+    @model_validator(mode="after")
+    def validate_fitness(self):
+        if self.fitness is not None and (self.fitness < 0.0 or self.fitness > 1.0):
             raise ValueError("Fitness must be between 0.0 and 1.0")
-        return v
+        return self
 
-    @field_validator("generation")
-    def validate_generation(cls, v):
-        if v < 0:
+    @model_validator(mode="after")
+    def validate_generation(self):
+        if self.generation < 0:
             raise ValueError("Generation must be non-negative")
-        return v
+        return self
 
     class Config:
         json_encoders = {
@@ -63,17 +63,17 @@ class OptimizationResult(BaseModel):
         default_factory=datetime.now, description="When the optimization was run"
     )
 
-    @field_validator("convergence_iteration")
-    def validate_convergence_iteration(cls, v, values):
+    @model_validator(mode="after")
+    def validate_convergence_iteration(self):
         if (
-            v is not None
-            and "total_iterations" in values
-            and v > values["total_iterations"]
+            self.convergence_iteration
+            and self.total_iterations
+            and self.convergence_iteration > self.total_iterations
         ):
             raise ValueError(
                 "Convergence iteration cannot be greater than total iterations"
             )
-        return v
+        return self
 
     class Config:
         json_encoders = {
@@ -100,21 +100,17 @@ class OptimizationConfig(BaseModel):
     temperature: float = Field(1.0, ge=0.0, le=2.0, description="Sampling temperature")
     max_retries: int = Field(3, ge=0, description="Retry attempts for failed API calls")
 
-    @field_validator("num_elites")
-    def validate_num_elites(cls, v, values):
-        if "population_size" in values and v >= values["population_size"]:
+    @model_validator(mode="after")
+    def validate_num_elites(self):
+        if self.population_size and self.num_elites >= self.population_size:
             raise ValueError("Number of elites must be less than population size")
-        return v
+        return self
 
-    @field_validator("tournament_size")
-    def validate_tournament_size(cls, v, values):
-        if "population_size" in values and v > values["population_size"]:
+    @model_validator(mode="after")
+    def validate_tournament_size(self):
+        if self.population_size and self.tournament_size > self.population_size:
             raise ValueError("Tournament size cannot be greater than population size")
-        return v
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for serialization."""
-        return self.dict()
+        return self
 
     class Config:
         validate_assignment = True  # Validate on assignment

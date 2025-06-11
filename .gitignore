@@ -185,3 +185,69 @@ models/
 test.py
 
 .idea/
+
+# =============================================================================
+# Dagster-specific files
+# =============================================================================
+
+# Dagster home directory - contains SQLite DBs, logs, and temporary files
+.dagster_home/
+
+# Dagster temporary directories
+/tmp/dagster/
+
+# Dagster logs and run artifacts
+dagster_logs/
+dagster_storage/
+
+# =============================================================================
+# Data files and artifacts
+# =============================================================================
+
+# Large datasets and generated data
+data/llm_generated/
+data/upsampled/
+data/downsampled/
+data/class_samples/
+
+# Model artifacts and checkpoints
+models/
+*.pth
+*.ckpt
+*.safetensors
+
+# Optimization results and graphs
+optimization_results/
+graphs/
+
+# DVC cache (if using DVC for data versioning)
+.dvc/cache/
+
+# Large CSV files (keep structure but not actual data)
+*.csv
+!data/cleaned_user_reviews.csv  # Keep the original cleaned dataset
+
+# =============================================================================
+# ML/AI specific
+# =============================================================================
+
+# Weights & Biases
+wandb/
+
+# MLflow
+mlruns/
+
+# TensorBoard logs
+runs/
+logs/
+
+# Hugging Face cache
+.cache/huggingface/
+
+# Large binary files
+*.bin
+*.h5
+*.hdf5
+
+# SQLite
+storage/
