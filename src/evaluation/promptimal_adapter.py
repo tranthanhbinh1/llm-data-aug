@@ -4,6 +4,7 @@ from promptimal.dtos import PromptCandidate, TokenCount
 from src.evaluation.strategy_manager import EvaluationStrategyManager
 
 
+# TODO: watch this one
 class PromptimalEvaluatorAdapter:
     """Adapter to connect EvaluationStrategyManager with promptimal's evaluation interface"""
 
@@ -35,7 +36,7 @@ class PromptimalEvaluatorAdapter:
 
             # Ensure score is in [0, 1] range expected by promptimal
             candidate.fitness = max(0.0, min(1.0, score))
-            candidate.reflection = f"Evaluated using {self.strategy_manager.get_active_strategy(self.current_iteration).value} strategy"
+            candidate.reflection = f"Evaluated using {self.strategy_manager.get_active_strategy(self.current_iteration).value} strategy"  # NOTE: I deleted the manager
 
         except Exception as e:
             # Fallback to low score if evaluation fails
