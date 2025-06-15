@@ -70,15 +70,16 @@ src/worker/
 
 | Phase | Tasks |
 |-------|-------|
-| **0. Setup** | ➊ Add `dagster` and `dagster-webserver` to `pyproject.toml` (no `dagster-aws`). ➋ Ensure `.dagster_home` is initialised for local instance. |
-| **1. Repository** | ➊ Implement `src/worker/__init__.py` with `@repository`. ➋ Register all assets & jobs. |
-| **2. Assets** | ➊ Port logic into functions ≤20 LOC each. ➋ Greedy caching: if CSV already exists skip regeneration. ➌ Emit metadata (`MaterializeResult(metadata={"rows": len(df)})`). |
+| **0. Setup** | ✅ Dependencies installed; `dagster dev` renders empty repo; DAGSTER_HOME configured |
+| **0.1. Git Hygiene** | ✅ Updated `.gitignore` to exclude Dagster state, data artifacts, model checkpoints, and DVC cache as per new workspace rule |
+| **1. Repository** | ✅ `src/worker/__init__.py` with `Definitions` created; dev script added |
+| **2. Assets** | ➊ Port logic into wrapper functions ≤20 LOC each. ➋ Greedy caching: skip regeneration if artifact exists. ➌ Emit `MaterializeResult` metadata. |
 | **3. Resources** | ➊ Adapt `LLMResource` to return both instructor & raw client. ➋ Register in repository. |
 | **4. Partitions & Policies** | ➊ Create dynamic partitions for prompts. ➋ Configure `AutoMaterializePolicy.eager()` for `score_asset`. |
 | **5. Sensors & Schedules** | ➊ `re_optimize_sensor` – watches new data in `data/cleaned_user_reviews.csv` ⇒ rematerialise prompt. ➋ Daily schedule for `full_pipeline_job`. |
-| **6. Local Testing** | ➊ `dagster dev` – visualise asset graph. ➋ Unit tests using `dagster._check.testing.build_assets_job` to run assets in-memory. |
-| **7. CI/CD** | ➊ Add GitHub Action: `pytest`, `dagster-test`, and `dvc pull`/`dvc push` to manage data artifacts. ➋ Optionally containerise Dagster webserver via Docker Compose. |
-| **8. Documentation** | ➊ Update `README.md` with Dagster usage. ➋ Provide asset selection cheatsheet (e.g., `key:"score_asset"+`). |
+| **6. Local Testing** | ➊ `dagster dev` – visualise asset graph. ➋ Unit tests using `dagster._check.testing.build_assets_job`. |
+| **7. CI/CD** | ➊ GitHub Action: `pytest`, `dagster-test`, and `dvc pull/push`. ➋ Containerise Dagster webserver via Docker Compose. |
+| **8. Documentation** | ➊ Update `README.md` & `DAGSTER_SETUP.md`. ➋ Provide asset selection cheatsheet. |
 
 ---
 
@@ -119,4 +120,7 @@ src/worker/
 
 ---
 
-> This plan complies with workspace rules: modular design, PEP8, ≤20 LOC per function, max conditional depth 3.
+## New Workspace Rule (June 2025)
+> **Data & Artifacts must not be committed to git.**  All large datasets, generated CSVs, model checkpoints, Dagster run logs, and DVC cache **must** be ignored via `.gitignore`. Only configuration, code, and small reference files remain under version control.
+
+This rule is now enforced via the updated `.gitignore` (see Phase 0.1 above).
