@@ -65,18 +65,18 @@ class PhoBertTrainer(TrainerEvaluatorRepository):
         test_sentences = test_data["tokenized_text"].tolist()
 
         # Convert labels: first try LABEL_MAPPING (text to int), then use directly
-        logging.info(f"Unique labels in train data: {train_data['Sentiment'].unique()}")
+        logging.info(f"Unique labels in train data: {train_data['sentiment'].unique()}")
 
         try:
             # If labels are text, convert them to integers using LABEL_MAPPING
             train_labels = [
-                LABEL_MAPPING[label] for label in train_data["Sentiment"].tolist()
+                LABEL_MAPPING[label] for label in train_data["sentiment"].tolist()
             ]
             val_labels = [
-                LABEL_MAPPING[label] for label in val_data["Sentiment"].tolist()
+                LABEL_MAPPING[label] for label in val_data["sentiment"].tolist()
             ]
             test_labels = [
-                LABEL_MAPPING[label] for label in test_data["Sentiment"].tolist()
+                LABEL_MAPPING[label] for label in test_data["sentiment"].tolist()
             ]
             logging.info(
                 "Successfully converted text labels to integers using LABEL_MAPPING"
@@ -84,9 +84,9 @@ class PhoBertTrainer(TrainerEvaluatorRepository):
             logging.info(f"LABEL_MAPPING used: {LABEL_MAPPING}")
         except (KeyError, TypeError):
             # If labels are already integers or conversion fails, use them as-is
-            train_labels = train_data["Sentiment"].tolist()
-            val_labels = val_data["Sentiment"].tolist()
-            test_labels = test_data["Sentiment"].tolist()
+            train_labels = train_data["sentiment"].tolist()
+            val_labels = val_data["sentiment"].tolist()
+            test_labels = test_data["sentiment"].tolist()
             logging.info("Labels appear to be already numeric, using them directly")
 
         # Log dataset sizes

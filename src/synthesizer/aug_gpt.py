@@ -21,8 +21,7 @@ class AugGpt:
         sentiment: Sentiment, data: pd.DataFrame = pd.read_csv(ORIGINAL_DATASET_PATH)
     ) -> pd.DataFrame:
         _data = data.copy()
-
-        subset = _data.where(_data.sentiment == sentiment)
+        subset = _data[_data["sentiment"] == sentiment.value]
 
         return subset
 

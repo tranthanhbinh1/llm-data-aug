@@ -140,13 +140,13 @@ class CNNBertHybridTrainer(TrainerEvaluatorRepository):
         )
 
         train_sentences = train_data["tokenized_text"].tolist()
-        train_labels = train_data["Sentiment"].tolist()
+        train_labels = train_data["sentiment"].tolist()
 
         val_sentences = val_data["tokenized_text"].tolist()
-        val_labels = val_data["Sentiment"].tolist()
+        val_labels = val_data["sentiment"].tolist()
 
         test_sentences = test_data["tokenized_text"].tolist()
-        test_labels = test_data["Sentiment"].tolist()
+        test_labels = test_data["sentiment"].tolist()
 
         logging.info(f"Train set size: {len(train_sentences)}")
         logging.info(f"Validation set size: {len(val_sentences)}")

@@ -90,7 +90,7 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
         # Load data
         self.data = pd.read_csv(data_path)
         initial_rows = len(self.data)
-        self.data = self.data.dropna(subset=["Review", "Sentiment"])
+        self.data = self.data.dropna(subset=["sentence", "sentiment"])
         self.data = self.data.reset_index(drop=True)
 
         removed_rows = initial_rows - len(self.data)
@@ -141,27 +141,15 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
             return_tensors="pt",
         )
 
-        logging.info(f"Unique labels in train data: {train_data['Sentiment'].unique()}")
+        logging.info(f"Unique labels in train data: {train_data['sentiment'].unique()}")
 
-        try:
-            train_sentiment_mapped = [
-                LABEL_MAPPING[label] for label in train_data["Sentiment"]
-            ]
-            val_sentiment_mapped = [
-                LABEL_MAPPING[label] for label in val_data["Sentiment"]
-            ]
-            test_sentiment_mapped = [
-                LABEL_MAPPING[label] for label in test_data["Sentiment"]
-            ]
-            logging.info(
-                "Successfully converted text labels to integers using LABEL_MAPPING"
-            )
-            logging.info(f"LABEL_MAPPING used: {LABEL_MAPPING}")
-        except (KeyError, TypeError):
-            train_sentiment_mapped = train_data["Sentiment"].tolist()
-            val_sentiment_mapped = val_data["Sentiment"].tolist()
-            test_sentiment_mapped = test_data["Sentiment"].tolist()
-            logging.info("Labels appear to be already numeric, using them directly")
+        train_sentiment_mapped = [
+            LABEL_MAPPING[label] for label in train_data["sentiment"]
+        ]
+        val_sentiment_mapped = [LABEL_MAPPING[label] for label in val_data["sentiment"]]
+        test_sentiment_mapped = [
+            LABEL_MAPPING[label] for label in test_data["sentiment"]
+        ]
 
         label_encoder = LabelEncoder()
         y_train = label_encoder.fit_transform(train_sentiment_mapped)
