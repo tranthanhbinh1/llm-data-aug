@@ -176,4 +176,4 @@ if __name__ == "__main__":
         prompt="Bạn là một trợ lý hữu ích, có nhiệm vụ diễn đạt lại văn bản và làm cho câu văn trở nên mượt mà hơn.",
     )
 
-    # logger.info(f"Average cosine similarity: {average_cosine_similarity}")
+    logger.info(f"Average cosine similarity: {average_cosine_similarity}")
