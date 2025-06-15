@@ -9,128 +9,113 @@
 ## 7. Report the average similarity score
 
 
-from typing import cast
 import pandas as pd
 import torch
 from loguru import logger
 from sentence_transformers import SentenceTransformer
 
+from src.enums import Sentiment
 from src.repositories.evaluator import EvaluatorRepository
 
-from ..constants import LABEL_MAPPING, NUM_REPHRASED_SENTENCES
-from ..synthesizer.generator import DataGenerator
-from ..synthesizer.models import (
-    AugmentedUserReviews,
-    SentimentPrompt,
-)
-from openai.types.chat.chat_completion_message_param import (
-    ChatCompletionSystemMessageParam,
-)
-from src.synthesizer.aug_gpt_generator import AugGptRunner
+from ..synthesizer.models import AugmentedSentencesBatch
 from ..utils import get_instructor_instance
 from ..constants import ORIGINAL_DATASET_PATH
+from ..synthesizer.aug_gpt import AugGpt
 
 
 class SimiarityEvaluator(EvaluatorRepository):
     def __init__(
         self,
-        auggpt_runner: AugGptRunner,
+        data_synthesizer: AugGpt,
+        data_path: str = ORIGINAL_DATASET_PATH,
         model_name: str = "all-MiniLM-L6-v2",
     ):
         self.model = SentenceTransformer(model_name)
-        self._original_data = pd.read_csv(ORIGINAL_DATASET_PATH)
-        self._auggpt_runner = auggpt_runner
+        self._original_data = pd.read_csv(data_path)
+        self._data_synthesizer = data_synthesizer
 
     def random_split(
         self,
-        sentiment: str,
+        sentiment: Sentiment,
         test_size: float = 0.05,
     ) -> pd.DataFrame:
-        data = self._original_data.copy()
-        data["Sentiment"] = data["Sentiment"].map(LABEL_MAPPING)
-
-        # Filter first, then sample
-        subset = data[data["Sentiment"] == DataGenerator.SENTIMENT_MAPPING[sentiment]]
-        sampled_subset = subset.sample(frac=test_size, random_state=42)
-
-        logger.info(f"Total {sentiment} records: {len(subset)}")
-        logger.info(f"Sampled subset size: {len(sampled_subset)}")
+        data = self._data_synthesizer.prepare_original_sentences(
+            sentiment=sentiment,
+            data=self._original_data,
+        )
+        sampled_subset = data.sample(frac=test_size, random_state=42)
         return sampled_subset
 
     # TODO: maybe this function should be detached
     def generate_synthetic_data(
-        self, sentiment: str, prompt: str
+        self, sentiment: Sentiment, prompt: str
     ) -> dict[str, list[str]]:
         subset = self.random_split(sentiment=sentiment)
         if subset.empty:
             raise ValueError(f"No {sentiment} records found in the dataset")
 
-        _original_sentences, _original_sentence_prompts = (
-            self._auggpt_runner.prepare_original_sentences(
-                sentiment=sentiment,
-                data=subset,
-            )
+        original_sentences_df = self._data_synthesizer.prepare_original_sentences(
+            sentiment=sentiment,
+            data=subset,
         )
 
-        if not _original_sentences:
-            raise ValueError("No sentences were prepared for generation")
-
-        synthesized_records, original_sentences, _ = (
-            self._auggpt_runner._generate_reviews(
-                sentiment=sentiment,
-                user_prompt=SentimentPrompt.AUG_GPT_PROMPT,
-                augmentor_prompt=ChatCompletionSystemMessageParam(
-                    role="system",
-                    content=prompt,
-                ),
-                num_to_generate=NUM_REPHRASED_SENTENCES,
-                original_sentences=_original_sentences,
-                original_sentence_prompts=_original_sentence_prompts,
-            )
+        original_sentences_and_augmented_sentences: list[
+            tuple[str, AugmentedSentencesBatch]
+        ] = self._data_synthesizer.generate(
+            sentiment=sentiment,
+            original_sentences=original_sentences_df["sentence"].tolist(),
+            system_prompt=prompt,
         )
 
         # Create a mapping between an original sentence and its corresponding records
-        _original_sentence_to_records: dict[str, AugmentedUserReviews] = dict()
-        for original_sentence, synthesized_record in zip(
-            original_sentences, synthesized_records
-        ):
-            _original_sentence_to_records[original_sentence] = cast(
-                AugmentedUserReviews, synthesized_record
-            )
+        _original_sentence_to_records: dict[str, AugmentedSentencesBatch] = dict()
+        for (
+            original_sentence,
+            augmented_sentences,
+        ) in original_sentences_and_augmented_sentences:
+            _original_sentence_to_records[original_sentence] = augmented_sentences
 
         # For each AugmentedUserReviews object in the dict, we extract the reviews
-        original_sentence_to_synthesized_reviews: dict[str, list[str]] = {
-            original_sentence: [review.review for review in augmented_reviews.reviews]
+        original_sentence_to_synthesized_sentences: dict[str, list[str]] = {
+            original_sentence: [
+                review.sentence for review in augmented_reviews.sentences
+            ]
             for original_sentence, augmented_reviews in _original_sentence_to_records.items()
         }
 
-        logger.info(f"Generated {len(synthesized_records)} synthetic reviews")
-        return original_sentence_to_synthesized_reviews
+        logger.info(
+            f"Generated {len(original_sentence_to_synthesized_sentences)} synthetic sentences"
+        )
+        return original_sentence_to_synthesized_sentences
 
-    def create_emebeddings(self, sentence_to_synthesized_reviews: dict[str, list[str]]):
-        sentence_to_synthesized_reviews_embeddings: dict[str, torch.Tensor] = dict()
-        for sentence, reviews in sentence_to_synthesized_reviews.items():
-            embeddings = self.model.encode(reviews)
-            sentence_to_synthesized_reviews_embeddings[sentence] = torch.tensor(
+    def create_emebeddings(
+        self, sentence_to_synthesized_sentences: dict[str, list[str]]
+    ):
+        sentence_to_synthesized_sentences_embeddings: dict[str, torch.Tensor] = dict()
+        for sentence, sentences in sentence_to_synthesized_sentences.items():
+            embeddings = self.model.encode(sentences)
+            sentence_to_synthesized_sentences_embeddings[sentence] = torch.tensor(
                 embeddings
             )
 
         sentence_to_embeddings: dict[str, torch.Tensor] = dict()
-        for sentence, _ in sentence_to_synthesized_reviews_embeddings.items():
+        for sentence, _ in sentence_to_synthesized_sentences_embeddings.items():
             embeddings = self.model.encode(sentence)
             sentence_to_embeddings[sentence] = torch.tensor(embeddings)
 
-        return sentence_to_synthesized_reviews_embeddings, sentence_to_embeddings
+        return sentence_to_synthesized_sentences_embeddings, sentence_to_embeddings
 
     def evaluate(
         self,
-        sentence_to_synthesized_reviews_embeddings: dict[str, torch.Tensor],
+        sentence_to_synthesized_sentences_embeddings: dict[str, torch.Tensor],
         sentence_to_embeddings: dict[str, torch.Tensor],
     ) -> float:
         cosine_similarity_scores: list[float] = []
         for sentence, original_embedding in sentence_to_embeddings.items():
             # Get synthetic reviews embeddings for this sentence
-            synthetic_embeddings = sentence_to_synthesized_reviews_embeddings[sentence]
+            synthetic_embeddings = sentence_to_synthesized_sentences_embeddings[
+                sentence
+            ]
 
             # Calculate similarity between original sentence and each synthetic version
             similarities = torch.nn.functional.cosine_similarity(
@@ -166,7 +151,7 @@ class SimiarityEvaluator(EvaluatorRepository):
 
     def run_evaluation(
         self,
-        sentiment: str,
+        sentiment: Sentiment,
         prompt: str,
     ):
         sentence_to_synthesized_reviews = self.generate_synthetic_data(
@@ -185,9 +170,9 @@ if __name__ == "__main__":
 
     load_dotenv()
 
-    evaluator = SimiarityEvaluator(AugGptRunner(get_instructor_instance()))
+    evaluator = SimiarityEvaluator(AugGpt(get_instructor_instance()))
     average_cosine_similarity = evaluator.run_evaluation(
-        sentiment="neutral",
+        sentiment=Sentiment.NEUTRAL,
         prompt="Bạn là một trợ lý hữu ích, có nhiệm vụ diễn đạt lại văn bản và làm cho câu văn trở nên mượt mà hơn.",
     )
 

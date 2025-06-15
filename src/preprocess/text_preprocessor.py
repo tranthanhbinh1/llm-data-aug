@@ -88,16 +88,22 @@ class TextPreprocessor(PreprocessorRepository):
 
     def preprocess(self) -> pd.DataFrame:
         # Remove float objects
-        self.data = self.data[self.data["Review"].apply(lambda x: isinstance(x, str))]
-        self.data["Review"] = self.data["Review"].apply(
+        self.data = self.data[self.data["sentence"].apply(lambda x: isinstance(x, str))]
+        self.data["sentence"] = self.data["sentence"].apply(
             str.lower
         )  # Chuyển đổi văn bản thành chữ thường trước khi xử lý
-        self.data["Review"] = self.data["Review"].apply(self.remove_non_alphanumeric)
-        self.data["Review"] = self.data["Review"].apply(
+        self.data["sentence"] = self.data["sentence"].apply(
+            self.remove_non_alphanumeric
+        )
+        self.data["sentence"] = self.data["sentence"].apply(
             lambda x: self.expand_abbr(x, self.abbr)
         )
-        self.data["Review"] = self.data["Review"].apply(self.remove_special_characters)
-        self.data["Review"] = self.data["Review"].apply(self.normalize_repeated_words)
-        self.data["tokenized_text"] = self.data["Review"].apply(self.tokenize_text)
+        self.data["sentence"] = self.data["sentence"].apply(
+            self.remove_special_characters
+        )
+        self.data["sentence"] = self.data["sentence"].apply(
+            self.normalize_repeated_words
+        )
+        self.data["tokenized_text"] = self.data["sentence"].apply(self.tokenize_text)
 
         return self.data

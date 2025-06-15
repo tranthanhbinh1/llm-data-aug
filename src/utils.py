@@ -5,6 +5,7 @@ from sklearn.metrics import classification_report
 
 import instructor
 from google import genai
+from dotenv import load_dotenv
 
 
 # TODO: needs fixing
@@ -23,15 +24,16 @@ def save_classification_report(
     )
 
 
-def get_instructor_instance():
+def get_instructor_instance() -> instructor.AsyncInstructor:
+    load_dotenv()
     return instructor.from_genai(genai.Client(api_key=os.getenv("GOOGLE_AI_API_KEY")))
 
 
-def get_genai_client():
+def get_genai_client() -> genai.Client:
     return genai.Client(api_key=os.getenv("GOOGLE_AI_API_KEY"))
 
 
-def epoch_time(start_time, end_time):
+def epoch_time(start_time: float, end_time: float) -> tuple[int, int]:
     elapsed_time = end_time - start_time
     elapsed_mins = int(elapsed_time / 60)
     elapsed_secs = int(elapsed_time - (elapsed_mins * 60))
