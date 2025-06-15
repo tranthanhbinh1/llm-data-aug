@@ -20,7 +20,7 @@ def create_evaluators(sentiment: str):
 
     # Create similarity evaluator
     similarity_evaluator = SimiarityEvaluator(
-        auggpt_runner=AugGptRunner(get_instructor_instance()),
+        data_synthesizer=AugGptRunner(get_instructor_instance()),
     )
 
     # Create trainer evaluator

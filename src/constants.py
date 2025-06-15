@@ -10,7 +10,7 @@ DATA_PATH = os.path.join(PROJECT_ROOT, "data")
 ORIGINAL_DATASET_PATH = os.path.join(DATA_PATH, "cleaned_user_reviews.csv")
 
 LABEL_MAPPING = {
-    "Positive": 1,
-    "Neutral": 2,
-    "Negative": 0,
+    "positive": 1,
+    "neutral": 2,
+    "negative": 0,
 }
