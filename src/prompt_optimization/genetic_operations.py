@@ -60,7 +60,7 @@ class GeneticOperations:
             response = await self.instructor_client.chat.completions.create(
                 messages=[system_message, user_message],
                 model=self.config.model,
-                temperature=self.config.temperature,
+                # temperature=self.config.temperature,
                 response_model=BetterPrompts,
             )
 
@@ -110,7 +110,10 @@ class GeneticOperations:
                 )
                 if isinstance(result, tuple):
                     return result[0]  # Return just the candidate, ignore token count
+                elif isinstance(result, PromptCandidate):
+                    return result  # Return the evaluated candidate directly
                 else:
+                    # result should be a float fitness value
                     candidate.fitness = result
                     return candidate
             except Exception as e:
@@ -207,7 +210,7 @@ class GeneticOperations:
             response = await self.instructor_client.chat.completions.create(
                 messages=[system_message, user_message],
                 model=self.config.model,
-                temperature=self.config.temperature,
+                # temperature=self.config.temperature,
                 response_model=PromptCrossover,
             )
 

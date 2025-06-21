@@ -1,37 +1,24 @@
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, ConfigDict
 
 
 class PromptCandidate(BaseModel):
     """Represents a candidate prompt in the genetic algorithm."""
 
     prompt: str = Field(..., description="The prompt text")
-    fitness: Optional[float] = Field(None, description="Fitness score (0.0 to 1.0)")
+    fitness: Optional[float] = Field(
+        None, description="Fitness score (0.0 to 1.0)", ge=0.0, le=1.0
+    )
     reflection: Optional[str] = Field(
         None, description="Evaluation reflection/reasoning"
     )
-    generation: int = Field(0, description="Generation number in the genetic algorithm")
+    generation: int = Field(
+        0, description="Generation number in the genetic algorithm", ge=0
+    )
     parent_ids: List[str] = Field(
         default_factory=list, description="IDs of parent prompts"
     )
-
-    @model_validator(mode="after")
-    def validate_fitness(self):
-        if self.fitness is not None and (self.fitness < 0.0 or self.fitness > 1.0):
-            raise ValueError("Fitness must be between 0.0 and 1.0")
-        return self
-
-    @model_validator(mode="after")
-    def validate_generation(self):
-        if self.generation < 0:
-            raise ValueError("Generation must be non-negative")
-        return self
-
-    class Config:
-        json_encoders = {
-            # Custom encoders if needed
-        }
 
 
 class OptimizationResult(BaseModel):
@@ -75,10 +62,7 @@ class OptimizationResult(BaseModel):
             )
         return self
 
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat(),
-        }
+    model_config = ConfigDict(json_encoders={datetime: lambda v: v.isoformat()})
 
 
 class OptimizationConfig(BaseModel):
@@ -112,5 +96,4 @@ class OptimizationConfig(BaseModel):
             raise ValueError("Tournament size cannot be greater than population size")
         return self
 
-    class Config:
-        validate_assignment = True  # Validate on assignment
+    model_config = ConfigDict(validate_assignment=True)
