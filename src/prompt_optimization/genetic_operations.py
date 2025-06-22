@@ -60,7 +60,6 @@ class GeneticOperations:
             response = await self.instructor_client.chat.completions.create(
                 messages=[system_message, user_message],
                 model=self.config.model,
-                # temperature=self.config.temperature,
                 response_model=BetterPrompts,
             )
 
@@ -153,7 +152,6 @@ class GeneticOperations:
                 eval_response = await self.instructor_client.chat.completions.create(
                     messages=messages,
                     model=self.config.model,
-                    temperature=self.config.temperature,
                     response_model=PromptEvaluation,
                 )
 
@@ -210,7 +208,6 @@ class GeneticOperations:
             response = await self.instructor_client.chat.completions.create(
                 messages=[system_message, user_message],
                 model=self.config.model,
-                # temperature=self.config.temperature,
                 response_model=PromptCrossover,
             )
 
