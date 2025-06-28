@@ -5,30 +5,30 @@ Wraps the existing AugGptRunner to provide a clean interface for Dagster assets.
 
 import os
 import hashlib
-from typing import Dict, Any, Literal
+from typing import Dict, Any
 from pathlib import Path
 from openai.types.chat.chat_completion_system_message_param import (
     ChatCompletionSystemMessageParam,
 )
 
-from src.synthesizer.aug_gpt_generator import AugGptRunner
-from src.synthesizer.models import SentimentPrompt
-from src.constants import PROJECT_ROOT, NUM_REPHRASED_SENTENCES
+from src.synthesizer.aug_gpt import AugGpt
+from src.synthesizer.models import Sentiment
+from src.constants import PROJECT_ROOT
 
 
 class DataHelper:
     """Helper class for synthetic data generation operations."""
 
     @staticmethod
-    def get_cache_key(prompt: str, sentiment: str, model: str) -> str:
+    def get_cache_key(prompt: str, sentiment: Sentiment) -> str:
         """Generate deterministic cache key for synthetic data."""
-        content = f"{prompt}|{sentiment}|{model}"
+        content = f"{prompt}|{sentiment}"
         return hashlib.sha256(content.encode()).hexdigest()[:16]
 
     @staticmethod
-    def get_output_path(cache_key: str, sentiment: str, model: str) -> str:
+    def get_output_path(cache_key: str, sentiment: Sentiment) -> str:
         """Get output file path for synthetic data."""
-        output_dir = Path(PROJECT_ROOT) / "data" / "llm_generated" / model
+        output_dir = Path(PROJECT_ROOT) / "data" / "llm_generated" / sentiment.value
         output_dir.mkdir(parents=True, exist_ok=True)
         filename = f"auggpt_augmented_user_reviews_{sentiment}_{cache_key}.csv"
         return str(output_dir / filename)
@@ -40,10 +40,9 @@ class DataHelper:
 
     @staticmethod
     def generate_synthetic_data(
-        auggpt_runner: AugGptRunner,
+        auggpt_runner: AugGpt,
         prompt: str,
-        sentiment: Literal["neutral", "negative"],
-        model: str = "gemini-2.0-flash",
+        sentiment: Sentiment,
     ) -> str:
         """
         Generate synthetic data using AugGptRunner.
@@ -51,20 +50,13 @@ class DataHelper:
         Returns:
             Path to generated CSV file
         """
-        augmentor_prompt = ChatCompletionSystemMessageParam(
-            role="system",
-            content=prompt,
-        )
-
-        data_path = auggpt_runner.generate_reviews_batch(
+        data_path = auggpt_runner.generate(
+            original_sentences=original_sentences,
+            system_prompt=prompt,
             sentiment=sentiment,
-            user_prompt=SentimentPrompt.AUG_GPT_PROMPT,
-            augmentor_prompt=augmentor_prompt,
-            num_to_generate=NUM_REPHRASED_SENTENCES,
-            model=model,
         )
 
-        return data_path
+        return
 
     @staticmethod
     def get_data_stats(file_path: str) -> Dict[str, Any]:

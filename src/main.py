@@ -1,12 +1,9 @@
-from src.evaluation.eval import Evaluator
-from src.evaluation.similarity_evaluator import SimiarityEvaluator
 from src.trainers.cnn_bert_hybrid import CNNBertHybridTrainer
 from src.preprocess.text_preprocessor import TextPreprocessor
 from src.constants import ORIGINAL_DATASET_PATH
 import pandas as pd
 from transformers import AutoTokenizer, AutoModel
 import torch
-from src.synthesizer.aug_gpt_generator import AugGptRunner
 from promptimal.app import App
 from promptimal.promptimal import generate_evaluator
 

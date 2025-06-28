@@ -3,10 +3,9 @@ Synthetic data generation asset for Dagster pipeline.
 """
 
 import dagster as dg
-from typing import Literal
 
 from src.worker.helpers import DataHelper
-from src.worker.resource import LLMResource
+from src.worker.resource import SynthesizerResource
 
 
 @dg.asset(
@@ -20,7 +19,7 @@ from src.worker.resource import LLMResource
 )
 def synthetic_data_asset(
     context: dg.AssetExecutionContext,
-    llm: LLMResource,
+    synthesizer: SynthesizerResource,
     prompt_asset: str,
 ) -> dg.MaterializeResult:
     """Generate synthetic data using optimized prompt and AugGptRunner."""
@@ -38,13 +37,8 @@ def synthetic_data_asset(
         result_metadata = {"cached": True, "cache_key": cache_key}
     else:
         # Generate new synthetic data
-        from src.synthesizer.aug_gpt_generator import AugGptRunner
-
-        instructor_instance = llm.get_instructor_instance()
-        auggpt_runner = AugGptRunner(instructor_instance)
-
         data_path = DataHelper.generate_synthetic_data(
-            auggpt_runner=auggpt_runner,
+            auggpt_runner=synthesizer,
             prompt=prompt_asset,
             sentiment=sentiment,
             model=model,
