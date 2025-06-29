@@ -61,6 +61,14 @@ def prompt_asset(
             "execution_time": result["execution_time"],
         }
 
+    context.log_event(
+        dg.AssetObservation(
+            asset_key=dg.AssetKey("prompt_asset"),
+            description="Prompt optimization result",
+            metadata=result_metadata,
+        )
+    )
+
     return dg.MaterializeResult(
         asset_key="prompt_asset",
         metadata=result_metadata,

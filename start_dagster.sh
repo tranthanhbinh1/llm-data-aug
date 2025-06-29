@@ -17,7 +17,6 @@ mkdir -p "$DAGSTER_HOME"
 # Start Dagster development server
 echo "Starting Dagster development server..."
 echo "DAGSTER_HOME: $DAGSTER_HOME"
-echo "Visit: http://localhost:3001"
 
 cd "$PROJECT_ROOT"
-dagster dev -m src.worker -a defs --port 3001 
+dagster dev -m src.worker -a defs --port 3004 
