@@ -7,12 +7,8 @@ import os
 import hashlib
 from typing import Dict, Any
 from pathlib import Path
-from openai.types.chat.chat_completion_system_message_param import (
-    ChatCompletionSystemMessageParam,
-)
-
 from src.synthesizer.aug_gpt import AugGpt
-from src.synthesizer.models import Sentiment
+from src.enums import Sentiment
 from src.constants import PROJECT_ROOT
 
 
@@ -50,13 +46,41 @@ class DataHelper:
         Returns:
             Path to generated CSV file
         """
-        data_path = auggpt_runner.generate(
+        # Prepare original sentences from the dataset
+        original_data = auggpt_runner.prepare_original_sentences(sentiment)
+        original_sentences = original_data["sentence"].tolist()[:5]  # Limit for demo
+
+        # Generate augmented sentences
+        original_and_augmented_sentences = auggpt_runner.generate(
+            sentiment=sentiment,
             original_sentences=original_sentences,
             system_prompt=prompt,
-            sentiment=sentiment,
         )
 
-        return
+        # Save to file and return path
+        # Get output path
+        cache_key = DataHelper.get_cache_key(prompt, sentiment)
+        output_path = DataHelper.get_output_path(cache_key, sentiment)
+
+        # Flatten the data for saving
+        flattened_data = []
+        for original_sentence, augmented_reviews in original_and_augmented_sentences:
+            for review in augmented_reviews.sentences:
+                flattened_data.append(
+                    {
+                        "original_sentence": original_sentence,
+                        "augmented_sentence": review.sentence,
+                        "sentiment": review.sentiment.value,
+                    }
+                )
+
+        # Save to CSV
+        import pandas as pd
+
+        df = pd.DataFrame(flattened_data)
+        df.to_csv(output_path, index=False)
+
+        return output_path
 
     @staticmethod
     def get_data_stats(file_path: str) -> Dict[str, Any]:

@@ -6,6 +6,7 @@ import dagster as dg
 
 from src.worker.helpers import DataHelper
 from src.worker.resource import SynthesizerResource
+from src.enums import Sentiment
 
 
 @dg.asset(
@@ -21,16 +22,19 @@ def synthetic_data_asset(
     context: dg.AssetExecutionContext,
     synthesizer: SynthesizerResource,
     prompt_asset: str,
-) -> dg.MaterializeResult:
+) -> str:
     """Generate synthetic data using optimized prompt and AugGptRunner."""
     # Get configuration
     config = context.op_execution_context.op_config or {}
-    sentiment = config.get("sentiment", "neutral")
+    sentiment_str = config.get("sentiment", "neutral")
     model = config.get("model", "gemini-2.0-flash")
 
+    # Convert sentiment string to enum
+    sentiment = Sentiment(sentiment_str)
+
     # Generate cache key and check for existing data
-    cache_key = DataHelper.get_cache_key(prompt_asset, sentiment, model)
-    output_path = DataHelper.get_output_path(cache_key, sentiment, model)
+    cache_key = DataHelper.get_cache_key(prompt_asset, sentiment)
+    output_path = DataHelper.get_output_path(cache_key, sentiment)
 
     if DataHelper.check_cached_data(output_path):
         context.log.info(f"Using cached data from {output_path}")
@@ -38,10 +42,9 @@ def synthetic_data_asset(
     else:
         # Generate new synthetic data
         data_path = DataHelper.generate_synthetic_data(
-            auggpt_runner=synthesizer,
+            auggpt_runner=synthesizer.get_synthesizer_instance(),
             prompt=prompt_asset,
             sentiment=sentiment,
-            model=model,
         )
 
         result_metadata = {
@@ -54,7 +57,7 @@ def synthetic_data_asset(
     stats = DataHelper.get_data_stats(output_path)
     result_metadata.update({"data_stats": stats})
 
-    return dg.MaterializeResult(
-        asset_key="synthetic_data_asset",
-        metadata=result_metadata,
-    )
+    # Add metadata to context
+    context.add_output_metadata(metadata=result_metadata)
+
+    return output_path

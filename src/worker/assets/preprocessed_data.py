@@ -21,7 +21,7 @@ from src.constants import PROJECT_ROOT
 def preprocessed_data_asset(
     context: dg.AssetExecutionContext,
     synthetic_data_asset: str,
-) -> dg.MaterializeResult:
+) -> str:
     """Preprocess synthetic data for trainer consumption with caching."""
 
     # Generate cache key based on input data
@@ -49,6 +49,8 @@ def preprocessed_data_asset(
 
         # Use TextPreprocessor (expensive VnCoreNLP step)
         preprocessor = TextPreprocessor(data=data)
+        context.log.info("Preprocessing data...")
+        context.log.info(f"Data: {data.head().to_markdown()}")
         preprocessed_data = preprocessor.preprocess()
 
         # Save to cache
@@ -70,7 +72,7 @@ def preprocessed_data_asset(
         }
     )
 
-    return dg.MaterializeResult(
-        asset_key="preprocessed_data_asset",
-        metadata=result_metadata,
-    )
+    # Add metadata to context
+    context.add_output_metadata(metadata=result_metadata)
+
+    return str(output_path)

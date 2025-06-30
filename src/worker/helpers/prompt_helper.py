@@ -5,7 +5,6 @@ Wraps the existing PromptOptimizer to provide a clean interface for Dagster asse
 
 import os
 import hashlib
-import asyncio
 from typing import Dict, Any, Optional
 from pathlib import Path
 

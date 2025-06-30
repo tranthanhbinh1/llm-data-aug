@@ -25,7 +25,7 @@ from src.constants import PROJECT_ROOT
 def multi_trainer_scores_asset(
     context: dg.AssetExecutionContext,
     preprocessed_data_asset: str,
-) -> dg.MaterializeResult:
+) -> str:
     """Evaluate preprocessed data using multiple trainers sequentially."""
 
     # Generate cache key
@@ -176,7 +176,7 @@ def multi_trainer_scores_asset(
 
         context.log.info(f"Sequential evaluation completed. Results: {scores}")
 
-    return dg.MaterializeResult(
-        asset_key="multi_trainer_scores_asset",
-        metadata=result_metadata,
-    )
+    # Add metadata to context
+    context.add_output_metadata(metadata=result_metadata)
+
+    return str(output_path)
