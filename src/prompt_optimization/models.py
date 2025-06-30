@@ -81,7 +81,6 @@ class OptimizationConfig(BaseModel):
         3, ge=1, description="Self-consistency samples for LLM evaluation"
     )
     model: str = Field("gemini-2.0-flash", description="LLM model for operations")
-    temperature: float = Field(1.0, ge=0.0, le=2.0, description="Sampling temperature")
     max_retries: int = Field(3, ge=0, description="Retry attempts for failed API calls")
 
     @model_validator(mode="after")

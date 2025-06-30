@@ -27,7 +27,6 @@ class PromptOptimizer:
             tournament_size=3,
             num_evaluation_samples=3,
             model="gemini-2.0-flash",
-            temperature=1.0,
             max_retries=3,
         )  # Should read this from a config file
         self.genai_client = genai.Client(api_key=self.api_key)

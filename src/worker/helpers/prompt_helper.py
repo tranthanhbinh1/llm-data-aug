@@ -71,7 +71,6 @@ class PromptHelper:
             tournament_size=config.get("tournament_size", 3),
             num_evaluation_samples=config.get("num_evaluation_samples", 2),
             model=config.get("model", "gemini-2.0-flash"),
-            temperature=config.get("temperature", 1.0),
             max_retries=config.get("max_retries", 3),
         )
 
