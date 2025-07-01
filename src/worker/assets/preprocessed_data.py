@@ -10,7 +10,7 @@ from src.constants import PROJECT_ROOT
 
 
 @dg.asset(
-    deps=["synthetic_data_asset"],
+    deps=["full_synthetic_data_asset"],
     group_name="preprocessing",
     description="Preprocessed data ready for trainer consumption",
     metadata={
@@ -20,17 +20,17 @@ from src.constants import PROJECT_ROOT
 )
 def preprocessed_data_asset(
     context: dg.AssetExecutionContext,
-    synthetic_data_asset: str,
+    full_synthetic_data_asset: str,
 ) -> str:
-    """Preprocess synthetic data for trainer consumption with caching."""
+    """Preprocess full synthetic data for trainer consumption with caching."""
 
     # Generate cache key based on input data
     import hashlib
     import os
 
-    data_mtime = os.path.getmtime(synthetic_data_asset)
+    data_mtime = os.path.getmtime(full_synthetic_data_asset)
     cache_key = hashlib.sha256(
-        f"{synthetic_data_asset}|{data_mtime}".encode()
+        f"{full_synthetic_data_asset}|{data_mtime}".encode()
     ).hexdigest()[:16]
 
     # Define output path
@@ -45,7 +45,7 @@ def preprocessed_data_asset(
     else:
         # Load and preprocess data
         context.log.info("Running preprocessing pipeline...")
-        data = pd.read_csv(synthetic_data_asset)
+        data = pd.read_csv(full_synthetic_data_asset)
 
         # Use TextPreprocessor (expensive VnCoreNLP step)
         preprocessor = TextPreprocessor(data=data)

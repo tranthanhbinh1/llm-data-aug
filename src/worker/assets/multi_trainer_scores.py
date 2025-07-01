@@ -4,6 +4,7 @@ Multi-trainer evaluation asset that runs multiple trainers sequentially.
 
 import dagster as dg
 import json
+import time
 from pathlib import Path
 
 from src.trainers.cnn_bert_hybrid import CNNBertHybridTrainer
@@ -27,6 +28,8 @@ def multi_trainer_scores_asset(
     preprocessed_data_asset: str,
 ) -> str:
     """Evaluate preprocessed data using multiple trainers sequentially."""
+    context.log.info("🎯 Starting multi-trainer evaluation process")
+    context.log.info(f"📊 Using preprocessed data from: {preprocessed_data_asset}")
 
     # Generate cache key
     import hashlib
@@ -37,18 +40,38 @@ def multi_trainer_scores_asset(
         f"{preprocessed_data_asset}|{data_mtime}".encode()
     ).hexdigest()[:16]
 
+    context.log.info(f"🔑 Generated cache key: {cache_key}")
+
     output_dir = Path(PROJECT_ROOT) / "graphs" / "multi_scores"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"multi_scores_{cache_key}.json"
 
+    context.log.info(f"📂 Output path: {output_path}")
+
     if output_path.exists():
-        context.log.info(f"Using cached multi-trainer scores from {output_path}")
+        context.log.info(f"💾 Using cached multi-trainer scores from {output_path}")
         with open(output_path, "r") as f:
             scores = json.load(f)
+
+        # Log cached results summary
+        successful_count = sum(
+            1 for k, v in scores.items() if k.endswith("_score") and v is not None
+        )
+        total_count = sum(1 for k in scores.keys() if k.endswith("_score"))
+        context.log.info(
+            f"📈 Cached results: {successful_count}/{total_count} trainers successful"
+        )
+
         result_metadata = {"cached": True, "cache_key": cache_key}
         result_metadata.update(scores)
     else:
-        context.log.info("Running sequential trainer evaluation...")
+        context.log.info(
+            "🔄 No cached results found - running new multi-trainer evaluation"
+        )
+        context.log.info("⚠️ This is a heavy operation that may take 10-30 minutes...")
+
+        # Track overall timing
+        overall_start_time = time.time()
 
         # Define trainer evaluation functions
         def evaluate_cnn_bert():
