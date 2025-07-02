@@ -86,24 +86,28 @@ class TextPreprocessor(PreprocessorRepository):
         tokens = self.vncorenlp.tokenize(text)
         return " ".join(" ".join(sentence) for sentence in tokens)
 
-    def preprocess(self) -> pd.DataFrame:
+    def preprocess(self, column_name: str = "sentence") -> pd.DataFrame:
         # Remove float objects
-        self.data = self.data[self.data["sentence"].apply(lambda x: isinstance(x, str))]
-        self.data["sentence"] = self.data["sentence"].apply(
+        self.data = self.data[
+            self.data[column_name].apply(lambda x: isinstance(x, str))
+        ]
+        self.data[column_name] = self.data[column_name].apply(
             str.lower
         )  # Chuyển đổi văn bản thành chữ thường trước khi xử lý
-        self.data["sentence"] = self.data["sentence"].apply(
+        self.data[column_name] = self.data[column_name].apply(
             self.remove_non_alphanumeric
         )
-        self.data["sentence"] = self.data["sentence"].apply(
+        self.data[column_name] = self.data[column_name].apply(
             lambda x: self.expand_abbr(x, self.abbr)
         )
-        self.data["sentence"] = self.data["sentence"].apply(
+        self.data[column_name] = self.data[column_name].apply(
             self.remove_special_characters
         )
-        self.data["sentence"] = self.data["sentence"].apply(
+        self.data[column_name] = self.data[column_name].apply(
             self.normalize_repeated_words
         )
-        self.data["tokenized_text"] = self.data["sentence"].apply(self.tokenize_text)
+        self.data[f"{column_name}_tokenized"] = self.data[column_name].apply(
+            self.tokenize_text
+        )
 
         return self.data

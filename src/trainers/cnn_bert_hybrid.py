@@ -130,8 +130,8 @@ class CNNBertHybridTrainer(TrainerEvaluatorRepository):
         torch.cuda.manual_seed(SEED)
         torch.backends.cudnn.deterministic = True
 
-    def load_data(self):
-        self.data = self.preprocessor.preprocess()
+    def load_data(self, column_name: str):
+        self.data = self.preprocessor.preprocess(column_name)
         train_data, test_data = train_test_split(
             self.data, test_size=0.2, random_state=SEED
         )
@@ -421,7 +421,7 @@ class CNNBertHybridTrainer(TrainerEvaluatorRepository):
 
         return optimizer
 
-    def main(self, batch_size=128, epochs=10):
+    def main(self, column_name: str, batch_size=128, epochs=10):
         """
         Run the complete training pipeline from data loading to evaluation
         """
@@ -429,7 +429,7 @@ class CNNBertHybridTrainer(TrainerEvaluatorRepository):
             (train_sentences, train_labels),
             (val_sentences, val_labels),
             (test_sentences, test_labels),
-        ) = self.load_data()
+        ) = self.load_data(column_name)
 
         # Create indexes, ids and masks
         (
@@ -473,7 +473,7 @@ class CNNBertHybridTrainer(TrainerEvaluatorRepository):
 
         return weighted_f1_score
 
-    def run_evaluation(self, data_path: str) -> float:
+    def run_evaluation(self, data_path: str, column_name: str = "sentence") -> float:
         bert_model = AutoModel.from_pretrained("vinai/phobert-base-v2")
 
         # TODO: dirty import, fix later
@@ -487,7 +487,7 @@ class CNNBertHybridTrainer(TrainerEvaluatorRepository):
             data_path=data_path,
             freeze_bert=True,
         )
-        return trainer.main()
+        return trainer.main(column_name)
 
 
 if __name__ == "__main__":
@@ -504,5 +504,5 @@ if __name__ == "__main__":
         data_path=args.data_path,
         freeze_bert=True,
     )
-    weighted_f1 = trainer.run_evaluation(args.data_path)
+    weighted_f1 = trainer.run_evaluation(args.data_path, args.column_name)
     print(weighted_f1)

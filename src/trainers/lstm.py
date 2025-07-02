@@ -104,8 +104,8 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
         torch.cuda.manual_seed(SEED)
         torch.backends.cudnn.deterministic = True
 
-    def _prepare_data(self):
-        self.data = self.preprocessor.preprocess()
+    def _prepare_data(self, column_name: str):
+        self.data = self.preprocessor.preprocess(column_name)
         train_data, test_data = train_test_split(
             self.data, test_size=0.2, random_state=SEED
         )
@@ -169,9 +169,9 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
             (test_encodings, y_test),
         )
 
-    def load_data(self):
+    def load_data(self, column_name: str):
         (train_encodings, y_train), (val_encodings, y_val), (test_encodings, y_test) = (
-            self._prepare_data()
+            self._prepare_data(column_name)
         )
 
         y_train_tensor = torch.tensor(y_train, dtype=torch.long)
@@ -347,7 +347,7 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
 
         return float(weighted_f1_score)
 
-    def run_training(self, batch_size=128, epochs=10, patience=3):
+    def run_training(self, column_name: str, batch_size=128, epochs=10, patience=3):
         """
         Run the complete training pipeline from data loading to evaluation
 
@@ -359,7 +359,7 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
         Returns:
             float: Weighted F1 score from test set evaluation
         """
-        train_dataset, val_dataset, test_dataset = self.load_data()
+        train_dataset, val_dataset, test_dataset = self.load_data(column_name)
 
         train_loader = DataLoader(
             train_dataset,
@@ -422,7 +422,7 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
 
         return weighted_f1_score
 
-    def run_evaluation(self, data_path: str) -> float:
+    def run_evaluation(self, data_path: str, column_name: str = "sentence") -> float:
         """Run evaluation on the model using the given sentiment and prompt.
 
         Args:
@@ -470,7 +470,9 @@ class BERTLSTMTrainer(TrainerEvaluatorRepository):
             preprocessor=preprocessor,
         )
 
-        return float(trainer.run_training(batch_size=128, epochs=10, patience=3))
+        return float(
+            trainer.run_training(column_name, batch_size=128, epochs=10, patience=3)
+        )
 
 
 if __name__ == "__main__":
@@ -494,5 +496,5 @@ if __name__ == "__main__":
         data_path=args.data_path,
         preprocessor=TextPreprocessor(data=pd.read_csv(args.data_path)),
     )
-    weighted_f1 = trainer.run_evaluation(args.data_path)
+    weighted_f1 = trainer.run_evaluation(args.data_path, args.column_name)
     print(weighted_f1)

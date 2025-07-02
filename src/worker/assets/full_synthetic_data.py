@@ -11,9 +11,9 @@ from src.enums import Sentiment
 
 
 @dg.asset(
-    deps=["prompt_asset"],
+    deps=["iterative_optimization_asset"],
     group_name="generation",
-    description="Complete synthetic review data generated for trainer evaluation",
+    description="Complete synthetic review data generated using iteratively optimized prompt",
     metadata={
         "asset_type": "full_data",
         "output_format": "csv",
@@ -22,28 +22,50 @@ from src.enums import Sentiment
 def full_synthetic_data_asset(
     context: dg.AssetExecutionContext,
     synthesizer: SynthesizerResource,
-    prompt_asset: str,
+    iterative_optimization_asset: str,
 ) -> str:
-    """Generate complete synthetic data using optimized prompt for trainer evaluation."""
+    """Generate complete synthetic data using iteratively optimized prompt for trainer evaluation."""
     context.log.info(
         "🏭 Starting full synthetic data generation for trainer evaluation"
     )
+    context.log.info(
+        f"📊 Using optimization results from: {iterative_optimization_asset}"
+    )
 
-    # Get configuration
-    config = context.op_execution_context.op_config or {}
-    sentiment_str = config.get("sentiment", "neutral")
-    num_samples = config.get("num_samples", None)  # Use all samples if not specified
+    # Load the optimization results to get the final prompt
+    import json
+
+    with open(iterative_optimization_asset, "r") as f:
+        optimization_results = json.load(f)
+
+    final_prompt = optimization_results["final_prompt"]
+    optimization_sentiment = optimization_results["config"]["sentiment"]
+
+    context.log.info(
+        f"📝 Extracted optimized prompt (length: {len(final_prompt)} chars)"
+    )
+    context.log.info(f"🎯 Optimization converged: {optimization_results['converged']}")
+    context.log.info(
+        f"📈 Final similarity score: {optimization_results['final_similarity_score']:.4f}"
+    )
+    sentiment_str = context.run_config.get(
+        "sentiment", optimization_sentiment
+    )  # Use optimization sentiment as default
+    context.log.info(f"🎯 Optimization sentiment: {optimization_sentiment}")
+    context.log.info(f"🎯 Sentiment: {sentiment_str}")
+    num_samples = context.run_config.get(
+        "num_samples", None
+    )  # Use all samples if not specified
 
     context.log.info(
         f"📊 Configuration: sentiment={sentiment_str}, num_samples={num_samples or 'all'}"
     )
-    context.log.info(f"📝 Using prompt (length: {len(prompt_asset)} chars)")
 
     # Convert sentiment string to enum
     sentiment = Sentiment(sentiment_str)
 
     # Generate cache key and check for existing data
-    cache_key = FullDataHelper.get_cache_key(prompt_asset, sentiment, num_samples)
+    cache_key = FullDataHelper.get_cache_key(final_prompt, sentiment, num_samples)
     output_path = FullDataHelper.get_output_path(cache_key, sentiment)
 
     context.log.info(f"🔑 Generated cache key: {cache_key}")
@@ -61,12 +83,12 @@ def full_synthetic_data_asset(
         # Generate new full synthetic data
         data_path = FullDataHelper.generate_full_synthetic_data(
             auggpt_runner=synthesizer.get_synthesizer_instance(),
-            prompt=prompt_asset,
+            prompt=final_prompt,
             sentiment=sentiment,
             num_samples=num_samples,
         )
 
-        context.log.info(f"✅ Full synthetic data generation completed")
+        context.log.info("✅ Full synthetic data generation completed")
         context.log.info(f"📁 Generated data saved to: {data_path}")
 
         result_metadata = {
@@ -80,7 +102,7 @@ def full_synthetic_data_asset(
     stats = FullDataHelper.get_data_stats(output_path)
     result_metadata.update({"data_stats": stats})
 
-    context.log.info(f"📈 Dataset statistics:")
+    context.log.info("📈 Dataset statistics:")
     context.log.info(f"   📋 Total records: {stats.get('total_records', 'N/A')}")
     context.log.info(f"   📊 Average length: {stats.get('average_length', 'N/A')}")
     context.log.info(

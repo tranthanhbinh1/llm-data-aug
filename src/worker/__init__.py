@@ -13,10 +13,12 @@ from src.worker.jobs.optimization_job import (
     iterative_optimization_job,
 )
 from src.worker.jobs.trainer_evaluation_job import trainer_evaluation_job
+from src.worker.jobs.iterative_loop_job import complete_cycle_job
 from src.worker.jobs.full_pipeline import (
     full_pipeline_job,
 )  # Keep for backward compatibility
 from src.worker.sensors.trainer_evaluation_sensor import trainer_evaluation_sensor
+from src.worker.sensors.optimization_cycle_sensor import optimization_cycle_sensor
 
 
 # Create the main definitions object
@@ -34,13 +36,17 @@ defs = dg.Definitions(
         multi_trainer_scores_asset,
     ],
     jobs=[
-        iterative_optimization_job,  # New primary optimization job
-        trainer_evaluation_job,
-        optimization_job,  # Deprecated but kept for compatibility
-        full_pipeline_job,  # Keep for backward compatibility
+        # Primary workflows
+        iterative_optimization_job,  # Optimization with similarity feedback
+        trainer_evaluation_job,  # Heavy trainer evaluation
+        complete_cycle_job,  # Complete cycle: optimization + trainer evaluation
+        # Legacy workflows (for backward compatibility)
+        optimization_job,  # Deprecated linear optimization
+        full_pipeline_job,  # Legacy full pipeline
     ],
     sensors=[
-        trainer_evaluation_sensor,
+        trainer_evaluation_sensor,  # Triggers trainer eval after X optimization cycles
+        optimization_cycle_sensor,  # Triggers next optimization after trainer eval
     ],
     resources={
         "llm": LLMResource(api_key=dg.EnvVar("GOOGLE_AI_API_KEY")),

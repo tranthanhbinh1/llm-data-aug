@@ -43,6 +43,7 @@ class PhoBertTrainer(TrainerEvaluatorRepository):
 
     def load_data(
         self,
+        column_name: str,
     ) -> Tuple[
         Tuple[List[str], List[int]],
         Tuple[List[str], List[int]],
@@ -51,7 +52,7 @@ class PhoBertTrainer(TrainerEvaluatorRepository):
         """
         Load and preprocess data, split into train, validation and test sets
         """
-        self.data = self.preprocessor.preprocess()
+        self.data = self.preprocessor.preprocess(column_name)
         train_data, test_data = train_test_split(
             self.data, test_size=0.2, random_state=SEED
         )
@@ -236,18 +237,19 @@ class PhoBertTrainer(TrainerEvaluatorRepository):
 
     def main(
         self,
+        column_name: str,
         epochs: int,
         batch_size: int,
         max_length: int,
         optimizer: Optimizer,
     ) -> float:
-        train_tuple, val_tuple, test_tuple = self.load_data()
+        train_tuple, val_tuple, test_tuple = self.load_data(column_name)
 
         self.train(train_tuple, val_tuple, epochs, batch_size, max_length, optimizer)
         weighted_f1 = self.evaluate(test_tuple, batch_size, max_length)
         return weighted_f1
 
-    def run_evaluation(self, data_path: str) -> float:
+    def run_evaluation(self, data_path: str, column_name: str = "sentence") -> float:
         """Run evaluation on the model using the given sentiment and prompt.
 
         Args:
@@ -280,6 +282,7 @@ class PhoBertTrainer(TrainerEvaluatorRepository):
 
         # Run training and evaluation
         return trainer.main(
+            column_name=column_name,
             epochs=5,
             batch_size=16 * 6,
             max_length=128,
@@ -293,6 +296,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--data-path", type=str, default=ORIGINAL_DATASET_PATH)
+    parser.add_argument("--column-name", type=str, default="sentence")
     args = parser.parse_args()
 
     trainer = PhoBertTrainer(
@@ -303,5 +307,5 @@ if __name__ == "__main__":
         preprocessor=TextPreprocessor(data=pd.read_csv(args.data_path)),
         tokenizer=AutoTokenizer.from_pretrained("vinai/phobert-base-v2"),
     )
-    weighted_f1 = trainer.run_evaluation(args.data_path)
+    weighted_f1 = trainer.run_evaluation(args.data_path, args.column_name)
     print(weighted_f1)
