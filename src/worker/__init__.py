@@ -6,6 +6,7 @@ from src.worker.assets.full_synthetic_data import full_synthetic_data_asset
 from src.worker.assets.preprocessed_data import preprocessed_data_asset
 from src.worker.assets.multi_trainer_scores import multi_trainer_scores_asset
 from src.worker.assets.iterative_optimization import iterative_optimization_asset
+from src.worker.assets.iterative_optimization_v2 import iterative_optimization_result
 from src.worker.resource import LLMResource, SynthesizerResource
 from src.worker.jobs.optimization_job import iterative_optimization_job
 from src.worker.jobs.trainer_evaluation_job import trainer_evaluation_job
@@ -22,6 +23,7 @@ defs = dg.Definitions(
         score_asset,
         # Remove the above later
         iterative_optimization_asset,
+        iterative_optimization_result,
         full_synthetic_data_asset,
         preprocessed_data_asset,
         multi_trainer_scores_asset,

@@ -1,5 +1,5 @@
 """
-Iterative optimization job using multiple ops for fine-grained control.
+Iterative optimization asset using graph-backed approach with multiple ops.
 """
 
 import dagster as dg
@@ -136,7 +136,9 @@ def run_genetic_optimization_op(
     return optimization_state
 
 
-@dg.op
+@dg.op(
+    out={"should_continue": dg.Out(bool), "optimization_state": dg.Out(Dict[str, Any])}
+)
 def check_convergence_op(
     context: dg.OpExecutionContext,
     optimization_state: Dict[str, Any],
@@ -183,32 +185,28 @@ def finalize_optimization_op(
     return final_result
 
 
-# Create the iterative optimization job
-@dg.job(
-    resource_defs={
-        "llm": LLMResource.configure_at_launch(),
-        "synthesizer": SynthesizerResource(),
-    }
-)
-def iterative_optimization_job():
+# Create the graph-backed asset
+@dg.graph_asset
+def iterative_optimization_result():
     """
-    Job that runs iterative optimization using multiple ops.
+    Graph-backed asset that produces optimized prompts using multiple ops.
 
-    Note: This approach requires manual orchestration of the loop
-    outside of Dagster, as Dagster jobs are DAGs and don't support
-    native loops. For true iterative behavior, use the single asset approach.
+    This asset uses multiple ops internally to perform the optimization
+    process in a modular way. Each materialization represents one
+    optimization round.
+
+    Returns:
+        Dict containing the optimization results including the final prompt,
+        score, convergence status, and optimization history.
     """
+    # Initialize optimization state
+    initial_state = initialize_optimization_op()
 
-    # Initialize
-    state = initialize_optimization_op()
+    # Run one round of genetic optimization
+    updated_state = run_genetic_optimization_op(initial_state)
 
-    # Run one optimization round
-    updated_state = run_genetic_optimization_op(state)
+    # Check convergence status
+    should_continue, checked_state = check_convergence_op(updated_state)
 
-    # Check convergence (in practice, you'd need external orchestration for the loop)
-    should_continue, final_state = check_convergence_op(updated_state)
-
-    # Finalize
-    result = finalize_optimization_op(final_state)
-
-    return result
+    # Finalize and return results
+    return finalize_optimization_op(checked_state)
