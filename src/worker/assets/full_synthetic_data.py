@@ -4,7 +4,7 @@ This generates the complete dataset without the 5-sample limit used for similari
 """
 
 import dagster as dg
-
+import json
 from src.worker.helpers import FullDataHelper
 from src.worker.resource import SynthesizerResource
 from src.enums import Sentiment
@@ -33,8 +33,6 @@ def full_synthetic_data_asset(
     )
 
     # Load the optimization results to get the final prompt
-    import json
-
     with open(iterative_optimization_asset, "r") as f:
         optimization_results = json.load(f)
 

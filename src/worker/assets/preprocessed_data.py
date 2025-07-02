@@ -5,6 +5,8 @@ Preprocessed data asset for trainer pipeline.
 import dagster as dg
 import pandas as pd
 from pathlib import Path
+import hashlib
+import os
 from src.preprocess.text_preprocessor import TextPreprocessor
 from src.constants import PROJECT_ROOT
 
@@ -25,9 +27,6 @@ def preprocessed_data_asset(
     """Preprocess full synthetic data for trainer consumption with caching."""
 
     # Generate cache key based on input data
-    import hashlib
-    import os
-
     data_mtime = os.path.getmtime(full_synthetic_data_asset)
     cache_key = hashlib.sha256(
         f"{full_synthetic_data_asset}|{data_mtime}".encode()

@@ -4,8 +4,16 @@ Multi-trainer evaluation asset that runs multiple trainers sequentially.
 
 import dagster as dg
 import json
-import time
 from pathlib import Path
+import hashlib
+import os
+import pandas as pd
+from transformers import (
+    AutoModel,
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
+)
+from src.preprocess.text_preprocessor import TextPreprocessor
 
 from src.trainers.cnn_bert_hybrid import CNNBertHybridTrainer
 from src.trainers.lstm import BERTLSTMTrainer, BERTLSTMModel
@@ -32,9 +40,6 @@ def multi_trainer_scores_asset(
     context.log.info(f"📊 Using preprocessed data from: {preprocessed_data_asset}")
 
     # Generate cache key
-    import hashlib
-    import os
-
     data_mtime = os.path.getmtime(preprocessed_data_asset)
     cache_key = hashlib.sha256(
         f"{preprocessed_data_asset}|{data_mtime}".encode()
@@ -70,16 +75,9 @@ def multi_trainer_scores_asset(
         )
         context.log.info("⚠️ This is a heavy operation that may take 10-30 minutes...")
 
-        # Track overall timing
-        overall_start_time = time.time()
-
         # Define trainer evaluation functions
         def evaluate_cnn_bert():
             try:
-                from transformers import AutoModel
-                import pandas as pd
-                from src.preprocess.text_preprocessor import TextPreprocessor
-
                 context.log.info("Evaluating CNN-BERT...")
                 bert_model = AutoModel.from_pretrained("vinai/phobert-base-v2")
                 preprocessor = TextPreprocessor(
@@ -101,9 +99,6 @@ def multi_trainer_scores_asset(
 
         def evaluate_lstm():
             try:
-                import pandas as pd
-                from src.preprocess.text_preprocessor import TextPreprocessor
-
                 context.log.info("Evaluating BERT-LSTM...")
                 model = BERTLSTMModel(
                     bert_model_name="vinai/phobert-base-v2",
@@ -132,13 +127,6 @@ def multi_trainer_scores_asset(
 
         def evaluate_phobert():
             try:
-                from transformers import (
-                    AutoModelForSequenceClassification,
-                    AutoTokenizer,
-                )
-                import pandas as pd
-                from src.preprocess.text_preprocessor import TextPreprocessor
-
                 context.log.info("Evaluating PhoBERT...")
                 model = AutoModelForSequenceClassification.from_pretrained(
                     "vinai/phobert-base-v2", num_labels=3

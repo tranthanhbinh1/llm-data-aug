@@ -7,6 +7,7 @@ import asyncio
 import json
 from pathlib import Path
 from typing import Dict, Any
+import hashlib
 
 from src.enums import Sentiment
 from src.worker.helpers import DataHelper, ScoreHelper
@@ -74,8 +75,6 @@ def iterative_optimization_asset(
     )
 
     # Generate cache key for this optimization run
-    import hashlib
-
     cache_content = f"{config.initial_prompt}|{config.improvement_request}|{config.sentiment}|{config.max_optimization_rounds}|{config.similarity_threshold}"
     cache_key = hashlib.sha256(cache_content.encode()).hexdigest()[:16]
 

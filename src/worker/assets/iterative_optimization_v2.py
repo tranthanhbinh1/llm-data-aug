@@ -4,7 +4,7 @@ Iterative optimization asset using graph-backed approach with multiple ops.
 
 import dagster as dg
 import asyncio
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, Tuple
 
 from src.enums import Sentiment
 from src.worker.helpers import DataHelper, ScoreHelper

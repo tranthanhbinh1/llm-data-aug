@@ -10,6 +10,7 @@ from pathlib import Path
 from src.synthesizer.aug_gpt import AugGpt
 from src.enums import Sentiment
 from src.constants import PROJECT_ROOT
+import pandas as pd
 
 
 class FullDataHelper:
@@ -91,8 +92,6 @@ class FullDataHelper:
                 )
 
         # Save to CSV
-        import pandas as pd
-
         df = pd.DataFrame(flattened_data)
         df.to_csv(output_path, index=False)
 
@@ -101,7 +100,6 @@ class FullDataHelper:
     @staticmethod
     def get_data_stats(file_path: str) -> Dict[str, Any]:
         """Get statistics about generated data file."""
-        import pandas as pd
 
         if not os.path.exists(file_path):
             return {"exists": False}
