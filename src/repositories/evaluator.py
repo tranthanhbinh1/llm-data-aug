@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 
 
-class EvaluatorRepository(ABC):
+class LightweightEvaluatorRepository(ABC):
     @abstractmethod
     def evaluate(self) -> float:
         raise NotImplementedError()

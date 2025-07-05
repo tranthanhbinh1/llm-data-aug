@@ -15,7 +15,7 @@ from loguru import logger
 from sentence_transformers import SentenceTransformer
 
 from src.enums import Sentiment
-from src.repositories.evaluator import EvaluatorRepository
+from src.repositories.evaluator import LightweightEvaluatorRepository
 
 from ..synthesizer.models import AugmentedSentencesBatch
 from ..utils import get_instructor_instance
@@ -23,7 +23,7 @@ from ..constants import ORIGINAL_DATASET_PATH
 from ..synthesizer.aug_gpt import AugGpt
 
 
-class SimiarityEvaluator(EvaluatorRepository):
+class SimiarityEvaluator(LightweightEvaluatorRepository):
     def __init__(
         self,
         data_synthesizer: AugGpt,

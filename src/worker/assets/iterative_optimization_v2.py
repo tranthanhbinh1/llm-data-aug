@@ -1,5 +1,5 @@
 """
-Iterative optimization asset using graph-backed approach with multiple ops.
+Iterative optimization asset using graph-backed approach with pluggable evaluators.
 """
 
 import dagster as dg
@@ -7,7 +7,11 @@ import asyncio
 from typing import Dict, Any, Tuple
 
 from src.enums import Sentiment
-from src.worker.helpers import DataHelper, ScoreHelper
+from src.worker.evaluators import (
+    EvaluatorStrategy,
+    LightweightEvaluator,
+    HeavyweightEvaluator,
+)
 from src.worker.resource import LLMResource, SynthesizerResource
 from src.prompt_optimization import PromptOptimizer, OptimizationConfig
 
@@ -19,6 +23,9 @@ from src.prompt_optimization import PromptOptimizer, OptimizationConfig
         "sentiment": str,
         "population_size": int,
         "num_iterations": int,
+        "max_optimization_rounds": int,
+        "lightweight_evaluation_rounds": int,
+        "trainer_score_weight": float,
     }
 )
 def initialize_optimization_op(context: dg.OpExecutionContext) -> Dict[str, Any]:
@@ -31,6 +38,10 @@ def initialize_optimization_op(context: dg.OpExecutionContext) -> Dict[str, Any]
         "sentiment": config["sentiment"],
         "round": 0,
         "best_score": 0.0,
+        "last_trainer_score": 0.0,
+        "max_optimization_rounds": config.get("max_optimization_rounds", 10),
+        "lightweight_evaluation_rounds": config.get("lightweight_evaluation_rounds", 4),
+        "trainer_score_weight": config.get("trainer_score_weight", 0.7),
         "optimization_config": {
             "population_size": config.get("population_size", 3),
             "num_iterations": config.get("num_iterations", 2),
@@ -42,9 +53,32 @@ def initialize_optimization_op(context: dg.OpExecutionContext) -> Dict[str, Any]
             "max_retries": 3,
         },
         "history": [],
+        "trainer_scores_history": [],
     }
 
     context.log.info("Initialized optimization state")
+    return optimization_state
+
+
+@dg.op
+def determine_evaluator_strategy_op(
+    context: dg.OpExecutionContext,
+    optimization_state: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Determine which evaluator strategy to use for this round."""
+
+    current_round = optimization_state["round"] + 1  # Next round number
+    lightweight_rounds = optimization_state["lightweight_evaluation_rounds"]
+
+    # Use heavyweight evaluation every N rounds
+    should_use_heavyweight = (current_round % (lightweight_rounds + 1)) == 0
+
+    evaluator_type = "heavyweight" if should_use_heavyweight else "lightweight"
+
+    context.log.info(f"🎯 Round {current_round}: Using {evaluator_type} evaluation")
+
+    optimization_state["current_evaluator_type"] = evaluator_type
+
     return optimization_state
 
 
@@ -55,48 +89,50 @@ def run_genetic_optimization_op(
     llm: LLMResource,
     synthesizer: SynthesizerResource,
 ) -> Dict[str, Any]:
-    """Run one round of genetic algorithm optimization."""
+    """Run one round of genetic algorithm optimization with pluggable evaluator."""
 
     async def _run_optimization():
         # Setup optimization config
         config_dict = optimization_state["optimization_config"]
         optimization_config = OptimizationConfig(**config_dict)
 
-        # Create similarity evaluator
-        def create_similarity_evaluator():
-            async def similarity_evaluator(
-                candidate, initial_prompt, improvement_request
-            ):
+        # Create the appropriate evaluator
+        evaluator_type = optimization_state.get("current_evaluator_type", "lightweight")
+
+        if evaluator_type == "heavyweight":
+            evaluator = HeavyweightEvaluator(context, synthesizer)
+        else:
+            evaluator = LightweightEvaluator(context, synthesizer)
+
+        context.log.info(
+            f"🔧 Using {evaluator.evaluation_type} evaluator (ETA: {evaluator.estimated_time_minutes} min)"
+        )
+
+        # Create evaluator function for genetic algorithm
+        def create_evaluator():
+            async def ga_evaluator(candidate, initial_prompt, improvement_request):
                 try:
-                    sentiment = Sentiment(optimization_state["sentiment"])
-
-                    # Generate synthetic data
-                    data_path = DataHelper.generate_synthetic_data(
-                        auggpt_runner=synthesizer.get_synthesizer_instance(),
-                        prompt=candidate.prompt,
-                        sentiment=sentiment,
+                    # Use the pluggable evaluator
+                    fitness_score = await evaluator.evaluate(
+                        candidate.prompt, optimization_state
                     )
 
-                    # Evaluate similarity
-                    score_data = ScoreHelper.evaluate_similarity(
-                        data_path=data_path,
-                        prompt=candidate.prompt,
-                    )
-
-                    candidate.fitness = score_data["similarity_score"]
+                    candidate.fitness = fitness_score
                     candidate.reflection = (
-                        f"Similarity: {score_data['similarity_score']:.4f}"
+                        f"{evaluator.evaluation_type}: {fitness_score:.4f}"
                     )
 
                     return candidate
 
                 except Exception as e:
-                    context.log.error(f"Similarity evaluation failed: {e}")
+                    context.log.error(
+                        f"{evaluator.evaluation_type} evaluation failed: {e}"
+                    )
                     candidate.fitness = 0.0
                     candidate.reflection = f"Failed: {str(e)}"
                     return candidate
 
-            return similarity_evaluator
+            return ga_evaluator
 
         # Run optimization
         optimizer = PromptOptimizer(api_key=llm.api_key, config=optimization_config)
@@ -104,25 +140,37 @@ def run_genetic_optimization_op(
         result = await optimizer.optimize(
             initial_prompt=optimization_state["current_prompt"],
             improvement_request=optimization_state["improvement_request"],
-            custom_evaluator=create_similarity_evaluator(),
+            custom_evaluator=create_evaluator(),
         )
 
-        return result
+        return result, evaluator_type
 
     # Run async optimization
-    result = asyncio.run(_run_optimization())
+    result, evaluator_type = asyncio.run(_run_optimization())
 
     # Update state
     optimization_state["round"] += 1
-    optimization_state["history"].append(
-        {
-            "round": optimization_state["round"],
-            "prompt": result.best_prompt,
-            "score": result.best_score,
-            "iterations": result.total_iterations,
-            "candidates_evaluated": result.total_candidates_evaluated,
-        }
-    )
+
+    round_data = {
+        "round": optimization_state["round"],
+        "prompt": result.best_prompt,
+        "score": result.best_score,
+        "evaluator_type": evaluator_type,
+        "iterations": result.total_iterations,
+        "candidates_evaluated": result.total_candidates_evaluated,
+    }
+
+    optimization_state["history"].append(round_data)
+
+    # Track trainer scores separately
+    if evaluator_type == "heavyweight":
+        optimization_state["last_trainer_score"] = result.best_score
+        optimization_state["trainer_scores_history"].append(
+            {
+                "round": optimization_state["round"],
+                "trainer_score": result.best_score,
+            }
+        )
 
     # Update current prompt if improved
     if result.best_score > optimization_state["best_score"]:
@@ -130,7 +178,7 @@ def run_genetic_optimization_op(
         optimization_state["best_score"] = result.best_score
 
     context.log.info(
-        f"Round {optimization_state['round']} - Score: {result.best_score:.4f}"
+        f"✅ Round {optimization_state['round']} ({evaluator_type}) - Score: {result.best_score:.4f}"
     )
 
     return optimization_state
@@ -145,19 +193,30 @@ def check_convergence_op(
 ) -> Tuple[bool, Dict[str, Any]]:
     """Check if optimization should continue."""
 
-    max_rounds = 10
+    max_rounds = optimization_state["max_optimization_rounds"]
     threshold = 0.8
+    current_round = optimization_state["round"]
+    best_score = optimization_state["best_score"]
+    last_trainer_score = optimization_state.get("last_trainer_score", 0.0)
 
-    should_continue = (
-        optimization_state["round"] < max_rounds
-        and optimization_state["best_score"] < threshold
-    )
+    # Check basic convergence criteria
+    should_continue = current_round < max_rounds and best_score < threshold
 
-    context.log.info(
-        f"Round {optimization_state['round']}/{max_rounds}, "
-        f"Score: {optimization_state['best_score']:.4f}/{threshold}, "
-        f"Continue: {should_continue}"
-    )
+    # Additional logging for trainer scores
+    trainer_count = len(optimization_state.get("trainer_scores_history", []))
+
+    context.log.info(f"📊 Convergence Check:")
+    context.log.info(f"   🔄 Round: {current_round}/{max_rounds}")
+    context.log.info(f"   📈 Best Score: {best_score:.4f}/{threshold}")
+    context.log.info(f"   🏋️ Last Trainer Score: {last_trainer_score:.4f}")
+    context.log.info(f"   🎯 Trainer Evaluations: {trainer_count}")
+    context.log.info(f"   ➡️ Continue: {should_continue}")
+
+    if not should_continue:
+        if current_round >= max_rounds:
+            context.log.info("🏁 Stopping: Maximum rounds reached")
+        elif best_score >= threshold:
+            context.log.info("🎯 Stopping: Threshold achieved")
 
     return should_continue, optimization_state
 
@@ -169,18 +228,46 @@ def finalize_optimization_op(
 ) -> Dict[str, Any]:
     """Finalize optimization and return results."""
 
+    trainer_scores_history = optimization_state.get("trainer_scores_history", [])
+    last_trainer_score = optimization_state.get("last_trainer_score", 0.0)
+
     final_result = {
         "final_prompt": optimization_state["current_prompt"],
         "final_score": optimization_state["best_score"],
+        "final_trainer_score": last_trainer_score,
         "total_rounds": optimization_state["round"],
         "converged": optimization_state["best_score"] >= 0.8,
         "history": optimization_state["history"],
+        "trainer_scores_history": trainer_scores_history,
+        "config": {
+            "max_optimization_rounds": optimization_state["max_optimization_rounds"],
+            "lightweight_evaluation_rounds": optimization_state[
+                "lightweight_evaluation_rounds"
+            ],
+            "trainer_score_weight": optimization_state["trainer_score_weight"],
+            "sentiment": optimization_state["sentiment"],
+        },
     }
 
+    # Calculate evaluation type distribution
+    evaluation_types = [
+        round_data.get("evaluator_type", "unknown")
+        for round_data in optimization_state["history"]
+    ]
+    lightweight_count = evaluation_types.count("lightweight")
+    heavyweight_count = evaluation_types.count("heavyweight")
+
+    context.log.info("🏁 OPTIMIZATION COMPLETE!")
+    context.log.info(f"📊 Final Results:")
+    context.log.info(f"   🔄 Total rounds: {optimization_state['round']}")
+    context.log.info(f"   📈 Final score: {optimization_state['best_score']:.4f}")
+    context.log.info(f"   🏋️ Final trainer score: {last_trainer_score:.4f}")
+    context.log.info(f"   🎯 Converged: {final_result['converged']}")
+    context.log.info(f"   ⚡ Lightweight evaluations: {lightweight_count}")
+    context.log.info(f"   🏋️ Heavyweight evaluations: {heavyweight_count}")
     context.log.info(
-        f"Optimization completed after {optimization_state['round']} rounds"
+        f"   📝 Final prompt length: {len(optimization_state['current_prompt'])} chars"
     )
-    context.log.info(f"Final score: {optimization_state['best_score']:.4f}")
 
     return final_result
 
@@ -189,24 +276,33 @@ def finalize_optimization_op(
 @dg.graph_asset
 def iterative_optimization_result():
     """
-    Graph-backed asset that produces optimized prompts using multiple ops.
+    Graph-backed asset that produces optimized prompts using pluggable evaluators.
 
     This asset uses multiple ops internally to perform the optimization
-    process in a modular way. Each materialization represents one
-    optimization round.
+    process in a modular way with support for both lightweight and heavyweight
+    evaluation strategies.
+
+    Features:
+    - Pluggable evaluators (lightweight vs heavyweight)
+    - Trainer integration for heavyweight evaluation
+    - Configurable evaluation intervals
+    - Comprehensive logging and tracking
 
     Returns:
         Dict containing the optimization results including the final prompt,
-        score, convergence status, and optimization history.
+        similarity score, trainer scores, convergence status, and complete history.
     """
-    # Initialize optimization state
+    # Initialize optimization state with configuration
     initial_state = initialize_optimization_op()
 
-    # Run one round of genetic optimization
-    updated_state = run_genetic_optimization_op(initial_state)
+    # Determine which evaluator strategy to use for this round
+    strategy_state = determine_evaluator_strategy_op(initial_state)
+
+    # Run one round of genetic optimization with chosen evaluator
+    optimized_state = run_genetic_optimization_op(strategy_state)
 
     # Check convergence status
-    should_continue, checked_state = check_convergence_op(updated_state)
+    should_continue, checked_state = check_convergence_op(optimized_state)
 
-    # Finalize and return results
+    # Finalize and return comprehensive results
     return finalize_optimization_op(checked_state)
