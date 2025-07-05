@@ -19,12 +19,12 @@ The pipeline has been restructured to support true iterative prompt optimization
 - **Built-in feedback loop**: Each genetic algorithm candidate is evaluated using actual similarity scores
 - **Progress tracking**: Detailed logs and metrics for each optimization round
 
-### 2. Heavy Trainer Evaluation Job (`trainer_evaluation_job`)
-**Purpose**: Comprehensive model evaluation with full dataset
+### 2. Complete Cycle Job (`complete_cycle_job`)
+**Purpose**: Comprehensive cycle including optimization and model evaluation with full dataset
 **Assets**:
-- `prompt_asset` → `full_synthetic_data_asset` (complete dataset) → `preprocessed_data_asset` → `multi_trainer_scores_asset`
-**Runtime**: ~30-60 minutes per cycle
-**Frequency**: Automatically triggered after X iterative optimization runs (configurable)
+- `iterative_optimization_asset` → `full_synthetic_data_asset` (complete dataset) → `preprocessed_data_asset` → `multi_trainer_scores_asset`
+**Runtime**: ~45-90 minutes per cycle (optimization + evaluation)
+**Frequency**: Automatically triggered by optimization_cycle_sensor for continuous improvement
 
 ### 3. Legacy Jobs (For Backward Compatibility)
 - **`optimization_job`**: Linear prompt optimization (deprecated)
@@ -62,34 +62,36 @@ class IterativeOptimizationConfig:
 
 ## Automated Workflow
 
-The `trainer_evaluation_sensor` monitors `iterative_optimization_asset` materializations and automatically triggers trainer evaluation after a configurable number of complete optimization cycles.
+The `optimization_cycle_sensor` monitors `complete_cycle_job` completions and automatically triggers the next optimization cycle for continuous improvement.
 
 **Configuration**:
 ```bash
-# Set the threshold via environment variable (default: 5)
-export OPTIMIZATION_ROUNDS_THRESHOLD=3
+# Enable continuous cycling (default: false)
+export ENABLE_CONTINUOUS_CYCLES=true
+# Set maximum cycles before stopping (default: 50)
+export MAX_TOTAL_CYCLES=20
 ```
 
 **Behavior**:
-1. Monitor `iterative_optimization_asset` materializations
-2. Count complete optimization cycles since last trainer evaluation
-3. When count ≥ threshold: trigger `trainer_evaluation_job`
-4. Reset counter and continue monitoring
+1. Monitor `complete_cycle_job` completions
+2. Track total cycles completed
+3. When cycle completes: trigger next `iterative_optimization_job`
+4. Continue until max cycles reached or manually stopped
 
 ## Key Assets
 
-### New Assets
+### Current Architecture Assets
 - **`iterative_optimization_asset`**: Complete iterative optimization with similarity feedback
 - **`full_synthetic_data_asset`**: Generates complete synthetic dataset (no sample limit)
-
-### Modified Components
-- **`trainer_evaluation_sensor`**: Now monitors iterative optimization runs
-- **`optimization_job`**: Updated to include both legacy and new approaches
-
-### Unchanged Assets
-- **`full_synthetic_data_asset`**: Complete dataset for trainer evaluation
 - **`preprocessed_data_asset`**: Data preprocessing for trainers
 - **`multi_trainer_scores_asset`**: Trainer evaluation results
+
+### Current Jobs
+- **`iterative_optimization_job`**: Fast optimization with similarity feedback
+- **`complete_cycle_job`**: Full optimization + trainer evaluation cycle
+
+### Current Sensors
+- **`optimization_cycle_sensor`**: Triggers continuous optimization cycles
 
 ## Benefits
 
@@ -122,10 +124,10 @@ dagster job execute iterative_optimization_job
 }
 ```
 
-### Manual Trainer Evaluation
+### Manual Complete Cycle
 ```bash
-# Force a trainer evaluation
-dagster job execute trainer_evaluation_job
+# Force a complete cycle (optimization + evaluation)
+dagster job execute complete_cycle_job
 ```
 
 ### Legacy Workflows (Deprecated)
@@ -136,8 +138,12 @@ dagster job execute optimization_job
 
 ### Configuring Automation
 ```bash
-# Set threshold for automatic trainer evaluation
-export OPTIMIZATION_ROUNDS_THRESHOLD=3  # Trigger after 3 optimization cycles
+# Enable continuous cycling
+export ENABLE_CONTINUOUS_CYCLES=true
+# Set maximum total cycles
+export MAX_TOTAL_CYCLES=20
+# Start the sensor
+dagster sensor start optimization_cycle_sensor
 ```
 
 ## Monitoring
@@ -152,18 +158,19 @@ export OPTIMIZATION_ROUNDS_THRESHOLD=3  # Trigger after 3 optimization cycles
 ```
 src/worker/
 ├── assets/
-│   ├── iterative_optimization.py      # Complete iterative optimization (NEW)
-│   ├── full_synthetic_data.py         # Complete synthetic data (EXISTING)
-│   ├── preprocessed_data.py           # Data preprocessing (EXISTING)
-│   └── multi_trainer_scores.py        # Trainer evaluation (EXISTING)
+│   ├── iterative_optimization.py      # Complete iterative optimization
+│   ├── iterative_optimization_v2.py   # Graph-backed optimization alternative
+│   ├── full_synthetic_data.py         # Complete synthetic data
+│   ├── preprocessed_data.py           # Data preprocessing
+│   └── multi_trainer_scores.py        # Trainer evaluation
 ├── jobs/
-│   ├── optimization_job.py            # Updated with iterative job (MODIFIED)
-│   ├── trainer_evaluation_job.py      # Heavy evaluation job (EXISTING)
-│   └── iterative_optimization_job.py  # Multi-op alternative (NEW)
+│   ├── optimization_job.py            # Fast optimization job
+│   └── iterative_loop_job.py          # Complete cycle job
 ├── sensors/
-│   └── trainer_evaluation_sensor.py   # Updated to monitor iterative optimization (MODIFIED)
+│   └── optimization_cycle_sensor.py   # Continuous optimization cycling
 └── helpers/
-    └── full_data_helper.py            # Complete data generation (EXISTING)
+    ├── full_data_helper.py            # Complete data generation
+    └── score_helper.py                # Similarity evaluation
 ```
 
 ## Migration Guide

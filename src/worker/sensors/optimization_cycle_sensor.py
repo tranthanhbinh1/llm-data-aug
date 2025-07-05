@@ -44,14 +44,13 @@ def optimization_cycle_sensor(
     context: dg.SensorEvaluationContext,
 ) -> Optional[dg.RunRequest]:
     """
-    Monitor trainer evaluation job completions and trigger next optimization cycle.
+    Monitor complete cycle job completions and trigger next optimization cycle.
 
     This sensor creates the complete iterative loop:
-    1. Optimization runs N times (monitored by trainer_evaluation_sensor)
-    2. Trainer evaluation is triggered automatically
-    3. This sensor detects trainer evaluation completion
-    4. Triggers next optimization cycle
-    5. Repeat until max cycles reached or manually stopped
+    1. Complete cycle runs (includes optimization + trainer evaluation)
+    2. This sensor detects complete cycle completion
+    3. Triggers next optimization cycle
+    4. Repeat until max cycles reached or manually stopped
 
     Configuration:
     - ENABLE_CONTINUOUS_CYCLES: Set to "true" to enable (default: false)
@@ -75,18 +74,18 @@ def optimization_cycle_sensor(
     max_cycles = get_max_total_cycles()
     context.log.info(f"⚙️ Configuration: max_cycles={max_cycles}")
 
-    # Parse cursor to track total cycles and last processed trainer evaluation
-    cursor_data = {"total_cycles": 0, "last_trainer_eval_storage_id": 0}
+    # Parse cursor to track total cycles and last processed complete cycle
+    cursor_data = {"total_cycles": 0, "last_cycle_storage_id": 0}
     if context.cursor:
         try:
             cursor_data = json.loads(context.cursor)
             context.log.info(
                 f"📚 Loaded cursor: total_cycles={cursor_data['total_cycles']}, "
-                f"last_eval_id={cursor_data['last_trainer_eval_storage_id']}"
+                f"last_cycle_id={cursor_data['last_cycle_storage_id']}"
             )
         except json.JSONDecodeError:
             context.log.warning("⚠️ Failed to parse cursor, resetting to default")
-            cursor_data = {"total_cycles": 0, "last_trainer_eval_storage_id": 0}
+            cursor_data = {"total_cycles": 0, "last_cycle_storage_id": 0}
     else:
         context.log.info("📚 No cursor found, starting fresh")
 
@@ -116,10 +115,10 @@ def optimization_cycle_sensor(
         )
     )
 
-    # Check for running trainer evaluation jobs
-    running_trainer_jobs = context.instance.get_run_records(
+    # Check for running complete cycle jobs
+    running_cycle_jobs = context.instance.get_run_records(
         dg.RunsFilter(
-            job_name="trainer_evaluation_job",
+            job_name="complete_cycle_job",
             statuses=[
                 dg.DagsterRunStatus.QUEUED,
                 dg.DagsterRunStatus.NOT_STARTED,
@@ -135,49 +134,47 @@ def optimization_cycle_sensor(
         )
         return None
 
-    if running_trainer_jobs:
+    if running_cycle_jobs:
         context.log.info(
-            f"⏸️ Skipping cycle trigger - {len(running_trainer_jobs)} trainer evaluation job(s) running"
+            f"⏸️ Skipping cycle trigger - {len(running_cycle_jobs)} complete cycle job(s) running"
         )
         return None
 
     context.log.info("✅ No conflicting jobs running - proceeding with check")
 
-    # Get recent successful trainer evaluation runs
+    # Get recent successful complete cycle runs
     context.log.info(
-        "🔎 Searching for completed trainer evaluations since cursor timestamp"
+        "🔎 Searching for completed complete cycle jobs since cursor timestamp"
     )
 
-    # Get successful trainer evaluation runs
-    successful_trainer_runs = context.instance.get_run_records(
+    # Get successful complete cycle runs
+    successful_cycle_runs = context.instance.get_run_records(
         dg.RunsFilter(
-            job_name="trainer_evaluation_job",
+            job_name="complete_cycle_job",
             statuses=[dg.DagsterRunStatus.SUCCESS],
         ),
         limit=50,
     )
 
     # Filter for runs completed after our last cursor
-    last_cursor_id = cursor_data["last_trainer_eval_storage_id"]
-    new_trainer_completions = []
+    last_cursor_id = cursor_data["last_cycle_storage_id"]
+    new_cycle_completions = []
 
-    for run_record in successful_trainer_runs:
+    for run_record in successful_cycle_runs:
         # Use run ID as a simple cursor mechanism (run IDs are sequential)
         if run_record.dagster_run.run_id > str(last_cursor_id):
-            new_trainer_completions.append(run_record)
+            new_cycle_completions.append(run_record)
 
     context.log.info(
-        f"📊 Found {len(new_trainer_completions)} newly completed trainer evaluation runs"
+        f"📊 Found {len(new_cycle_completions)} newly completed complete cycle runs"
     )
 
-    if not new_trainer_completions:
-        context.log.info(
-            "📈 No new trainer evaluation completions - sensor check complete"
-        )
+    if not new_cycle_completions:
+        context.log.info("📈 No new complete cycle completions - sensor check complete")
         return None
 
     # Log details about found completions
-    for i, run_record in enumerate(new_trainer_completions):
+    for i, run_record in enumerate(new_cycle_completions):
         context.log.info(
             f"   📋 Completion {i + 1}: run_id={run_record.dagster_run.run_id}, "
             f"status={run_record.dagster_run.status}, "
@@ -185,19 +182,19 @@ def optimization_cycle_sensor(
         )
 
     # Trigger next optimization cycle
-    latest_completion = new_trainer_completions[-1]  # Most recent completion
+    latest_completion = new_cycle_completions[-1]  # Most recent completion
     new_cycle_count = cursor_data["total_cycles"] + 1
 
     context.log.info("🎯 TRIGGERING NEXT OPTIMIZATION CYCLE:")
     context.log.info(f"   🔄 Cycle number: {new_cycle_count}/{max_cycles}")
     context.log.info(
-        f"   🔗 Based on trainer evaluation: {latest_completion.dagster_run.run_id}"
+        f"   🔗 Based on complete cycle: {latest_completion.dagster_run.run_id}"
     )
 
     # Update cursor
     new_cursor_data = {
         "total_cycles": new_cycle_count,
-        "last_trainer_eval_storage_id": latest_completion.dagster_run.run_id,
+        "last_cycle_storage_id": latest_completion.dagster_run.run_id,
     }
     context.update_cursor(json.dumps(new_cursor_data))
     context.log.info(f"📚 Updated cursor for cycle {new_cycle_count}")
@@ -217,7 +214,7 @@ def optimization_cycle_sensor(
             "cycle_number": str(new_cycle_count),
             "max_cycles": str(max_cycles),
             "trigger_type": "automatic_cycle",
-            "based_on_trainer_eval": latest_completion.dagster_run.run_id,
+            "based_on_complete_cycle": latest_completion.dagster_run.run_id,
             "remaining_cycles": str(max_cycles - new_cycle_count),
         },
     )
