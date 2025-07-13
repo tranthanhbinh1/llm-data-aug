@@ -83,6 +83,7 @@ class PromptOptimizer:
 
         # Evolution loop
         for iteration in range(self.config.num_iterations):
+            logger.info(f"Iteration {iteration} started")
             iteration_start = time.time()
 
             if progress_callback:
@@ -96,12 +97,9 @@ class PromptOptimizer:
             logger.info(f"Starting generation {iteration + 1}")
 
             # Check for convergence
-            for candidate in population:
-                print(f"Candidate's type: {type(candidate)}")
-                print(f"Candidate fitness: {candidate.fitness}")
             current_best = max(population, key=lambda c: c.fitness or 0.0)
-            print(f"Current best fitness: {current_best.fitness}")
-            print(f"Current best prompt: {current_best.prompt}")
+            logger.info(f"Current best fitness: {current_best.fitness}")
+            logger.info(f"Current best prompt: {current_best.prompt}")
             if current_best.fitness and current_best.fitness >= self.config.threshold:
                 logger.info(f"Convergence reached at generation {iteration + 1}")
                 convergence_iteration = iteration + 1

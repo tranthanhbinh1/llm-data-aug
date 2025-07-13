@@ -48,7 +48,9 @@ class DataHelper:
         """
         # Prepare original sentences from the dataset
         original_data = auggpt_runner.prepare_original_sentences(sentiment)
-        original_sentences = original_data["sentence"].tolist()[:5]  # Limit for demo
+        original_sentences = original_data["sentence"].tolist()[
+            :3
+        ]  # TODO: this number should be configurable
 
         # Generate augmented sentences
         original_and_augmented_sentences = auggpt_runner.generate(

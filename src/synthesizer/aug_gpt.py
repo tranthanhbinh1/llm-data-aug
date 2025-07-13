@@ -32,7 +32,7 @@ class AugGpt:
         augmented_sentences = self.instructor.messages.create(
             model="gemini-2.0-flash",
             strict=False,
-            messages=[
+            messages=[ # noqa
                 {
                     "role": "system",
                     "content": system_prompt,
@@ -54,10 +54,14 @@ class AugGpt:
     def generate_augmented_sentences_batch(
         self, sentiment: Sentiment, original_sentences: list[str], system_prompt: str
     ) -> list[tuple[str, AugmentedSentencesBatch]]:
-        """Generate augmented sentences for a list of original sentences, while keeping the sentiment the same as the original sentences"""
+        """Generate augmented sentences for a list of original sentences while keeping the sentiment the same as the original sentences"""
 
         original_and_augmented_sentences: list[tuple[str, AugmentedSentencesBatch]] = []
 
+        logging.info(
+            f"Generating augmented sentences for {len(original_sentences)} original sentences"
+        )
+        logging.info(f"System prompt: {system_prompt}")
         for original_sentence in original_sentences:
             logging.info(f"Generating augmented sentences for '{original_sentence}'")
             augmented_sentences = self._generate_augmented_sentences(
@@ -69,8 +73,8 @@ class AugGpt:
 
         return original_and_augmented_sentences
 
+    @staticmethod
     def save_augmented_sentences(
-        self,
         original_and_augmented_sentences: list[tuple[str, AugmentedSentencesBatch]],
         sentiment: Sentiment,  # TODO: we might need to use sentiment here to validate the output of LLM
     ) -> None:

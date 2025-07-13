@@ -8,7 +8,6 @@ from typing import Dict, Any, Tuple
 
 from src.enums import Sentiment
 from src.worker.evaluators import (
-    EvaluatorStrategy,
     LightweightEvaluator,
     HeavyweightEvaluator,
 )
@@ -16,35 +15,50 @@ from src.worker.resource import LLMResource, SynthesizerResource
 from src.prompt_optimization import PromptOptimizer, OptimizationConfig
 
 
-@dg.op(
-    config_schema={
-        "initial_prompt": str,
-        "improvement_request": str,
-        "sentiment": str,
-        "population_size": int,
-        "num_iterations": int,
-        "max_optimization_rounds": int,
-        "lightweight_evaluation_rounds": int,
-        "trainer_score_weight": float,
-    }
-)
-def initialize_optimization_op(context: dg.OpExecutionContext) -> Dict[str, Any]:
+class OptimizationInitializationConfig(dg.Config):
+    initial_prompt: str = """
+    Bạn là một trợ lý AI hữu ích. Nhiệm vụ của bạn là tạo ra các đánh giá một địa điểm ăn uống (McDonald's) bằng tiếng Việt chân thực và đa dạng.
+    """
+    improvement_request: str = """
+    Prompt hiện tại đã tạo ra được các đánh giá. Để nâng cao chất lượng dữ liệu và giúp việc chấm điểm (scoring) hiệu quả hơn, hãy tối ưu hóa prompt để các đánh giá được tạo ra đáp ứng các tiêu chí sau:
+    1. Tăng tính cụ thể và chi tiết (Increase Specificity and Detail):
+    - Đánh giá cần đề cập đến các món ăn, đồ uống, hoặc combo cụ thể của McDonald's tại Việt Nam (ví dụ: Big Mac, khoai tây chiên, McFlurry Oreo, gà rán).
+    - Phản ánh về nhiều khía cạnh khác nhau của trải nghiệm, không chỉ đồ ăn, ví dụ: thái độ nhân viên, tốc độ phục vụ, sự sạch sẽ của quán, không gian (chật/rộng, ồn ào/yên tĩnh), giá cả.
+    2. Mở rộng sự đa dạng về cảm xúc và góc nhìn (Expand Diversity of Sentiment and Perspective):
+    - Tạo ra một tỷ lệ rõ ràng hơn giữa các loại đánh giá: tích cực, tiêu cực, và trung lập.
+    - Bắt buộc phải có những đánh giá mang cảm xúc pha trộn (ví dụ: "Gà rán ngon nhưng khoai tây chiên lại bị ỉu" hoặc "Phục vụ nhanh nhưng giá hơi cao so với sinh viên").
+    - Mô phỏng các góc nhìn từ những nhóm khách hàng điển hình khác nhau: sinh viên (quan tâm giá cả, không gian học bài), gia đình có con nhỏ (quan tâm khu vui chơi, thực đơn cho trẻ em), nhân viên văn phòng (quan tâm tốc độ ăn trưa, combo tiện lợi).
+    3. Nâng cao tính chân thực trong ngôn ngữ (Enhance Authenticity of Language):
+    - Sử dụng ngôn ngữ tự nhiên, văn nói hàng ngày, có thể bao gồm cả những từ cảm thán (vd: "ôi", "chà", "trời ơi") hoặc từ lóng phổ biến.
+    - Tránh sử dụng những câu văn quá trang trọng, máy móc hoặc lặp lại cùng một cấu trúc. Các đánh giá phải có độ dài ngắn khác nhau.
+    """
+    sentiment: Sentiment = Sentiment.NEUTRAL
+    population_size: int = 5
+    num_iterations: int = 5
+    max_optimization_rounds: int = 10
+    lightweight_evaluation_rounds: int = 4
+    trainer_score_weight: float = 0.7
+
+
+@dg.op
+def initialize_optimization_op(
+    context: dg.OpExecutionContext, config: OptimizationInitializationConfig
+) -> Dict[str, Any]:
     """Initialize optimization parameters and state."""
-    config = context.op_config
 
     optimization_state = {
-        "current_prompt": config["initial_prompt"],
-        "improvement_request": config["improvement_request"],
-        "sentiment": config["sentiment"],
+        "current_prompt": config.initial_prompt,
+        "improvement_request": config.improvement_request,
+        "sentiment": config.sentiment,
         "round": 0,
         "best_score": 0.0,
         "last_trainer_score": 0.0,
-        "max_optimization_rounds": config.get("max_optimization_rounds", 10),
-        "lightweight_evaluation_rounds": config.get("lightweight_evaluation_rounds", 4),
-        "trainer_score_weight": config.get("trainer_score_weight", 0.7),
+        "max_optimization_rounds": config.max_optimization_rounds,
+        "lightweight_evaluation_rounds": config.lightweight_evaluation_rounds,
+        "trainer_score_weight": config.trainer_score_weight,
         "optimization_config": {
-            "population_size": config.get("population_size", 3),
-            "num_iterations": config.get("num_iterations", 2),
+            "population_size": config.population_size,
+            "num_iterations": config.num_iterations,
             "num_elites": 1,
             "threshold": 0.8,
             "tournament_size": 3,
@@ -274,23 +288,19 @@ def finalize_optimization_op(
 
 # Create the graph-backed asset
 @dg.graph_asset
-def iterative_optimization_result():
+def optimization_result():
     """
     Graph-backed asset that produces optimized prompts using pluggable evaluators.
-
-    This asset uses multiple ops internally to perform the optimization
-    process in a modular way with support for both lightweight and heavyweight
-    evaluation strategies.
-
-    Features:
-    - Pluggable evaluators (lightweight vs heavyweight)
-    - Trainer integration for heavyweight evaluation
-    - Configurable evaluation intervals
-    - Comprehensive logging and tracking
 
     Returns:
         Dict containing the optimization results including the final prompt,
         similarity score, trainer scores, convergence status, and complete history.
+
+    Features:
+    - Pluggable evaluators (lightweight vs. heavyweight)
+    - Trainer integration for heavyweight evaluation
+    - Configurable evaluation intervals
+    - Comprehensive logging and tracking
     """
     # Initialize optimization state with configuration
     initial_state = initialize_optimization_op()
@@ -298,11 +308,10 @@ def iterative_optimization_result():
     # Determine which evaluator strategy to use for this round
     strategy_state = determine_evaluator_strategy_op(initial_state)
 
-    # Run one round of genetic optimization with chosen evaluator
+    # Run one round of genetic optimization with the chose evaluator
     optimized_state = run_genetic_optimization_op(strategy_state)
 
     # Check convergence status
     should_continue, checked_state = check_convergence_op(optimized_state)
-
     # Finalize and return comprehensive results
     return finalize_optimization_op(checked_state)
