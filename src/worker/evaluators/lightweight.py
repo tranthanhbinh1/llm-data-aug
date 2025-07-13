@@ -78,7 +78,3 @@ class LightweightEvaluator(EvaluatorStrategy):
     @property
     def evaluation_type(self) -> str:
         return "lightweight"
-
-    @property
-    def estimated_time_minutes(self) -> float:
-        return 1.0  # ~1 minute for lightweight evaluation

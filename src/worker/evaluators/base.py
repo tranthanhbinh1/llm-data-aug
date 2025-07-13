@@ -40,9 +40,3 @@ class EvaluatorStrategy(ABC):
     def evaluation_type(self) -> str:
         """Return the type of evaluation (lightweight/heavyweight)"""
         pass
-
-    @property
-    @abstractmethod
-    def estimated_time_minutes(self) -> float:
-        """Return estimated evaluation time in minutes"""
-        pass

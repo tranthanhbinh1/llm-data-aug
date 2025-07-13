@@ -1,7 +1,3 @@
-"""
-Iterative optimization asset using graph-backed approach with pluggable evaluators.
-"""
-
 import dagster as dg
 import asyncio
 from typing import Dict, Any, Tuple
@@ -119,10 +115,10 @@ def run_genetic_optimization_op(
             evaluator = LightweightEvaluator(context, synthesizer)
 
         context.log.info(
-            f"🔧 Using {evaluator.evaluation_type} evaluator (ETA: {evaluator.estimated_time_minutes} min)"
+            f"🔧 Using {evaluator.evaluation_type} evaluator"
         )
 
-        # Create evaluator function for genetic algorithm
+        # Create the evaluator function for genetic algorithm
         def create_evaluator():
             async def ga_evaluator(candidate, initial_prompt, improvement_request):
                 try:
@@ -152,6 +148,7 @@ def run_genetic_optimization_op(
         optimizer = PromptOptimizer(api_key=llm.api_key, config=optimization_config)
 
         result = await optimizer.optimize(
+            context=context,
             initial_prompt=optimization_state["current_prompt"],
             improvement_request=optimization_state["improvement_request"],
             custom_evaluator=create_evaluator(),
@@ -186,7 +183,7 @@ def run_genetic_optimization_op(
             }
         )
 
-    # Update current prompt if improved
+    # Update the current prompt if improved
     if result.best_score > optimization_state["best_score"]:
         optimization_state["current_prompt"] = result.best_prompt
         optimization_state["best_score"] = result.best_score

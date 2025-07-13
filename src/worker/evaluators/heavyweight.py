@@ -265,7 +265,3 @@ class HeavyweightEvaluator(EvaluatorStrategy):
     @property
     def evaluation_type(self) -> str:
         return "heavyweight"
-
-    @property
-    def estimated_time_minutes(self) -> float:
-        return 25.0  # ~25 minutes for heavyweight evaluation
