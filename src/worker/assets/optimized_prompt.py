@@ -1,6 +1,6 @@
 import dagster as dg
 import asyncio
-from typing import Dict, Any, Tuple
+from typing import Dict, Any
 
 from src.enums import Sentiment
 from src.worker.evaluators import (
@@ -31,8 +31,8 @@ class OptimizationInitializationConfig(dg.Config):
     sentiment: Sentiment = Sentiment.NEUTRAL
     population_size: int = 5
     num_iterations: int = 5
-    max_optimization_rounds: int = 10
-    lightweight_evaluation_rounds: int = 4
+    max_optimization_rounds: int = 5
+    lightweight_evaluation_rounds: int = 2
     trainer_score_weight: float = 0.7
 
 
@@ -148,7 +148,6 @@ def run_genetic_optimization_op(
         optimizer = PromptOptimizer(api_key=llm.api_key, config=optimization_config)
 
         result = await optimizer.optimize(
-            context=context,
             initial_prompt=optimization_state["current_prompt"],
             improvement_request=optimization_state["improvement_request"],
             custom_evaluator=create_evaluator(),
@@ -195,13 +194,11 @@ def run_genetic_optimization_op(
     return optimization_state
 
 
-@dg.op(
-    out={"should_continue": dg.Out(bool), "optimization_state": dg.Out(Dict[str, Any])}
-)
+@dg.op
 def check_convergence_op(
-    context: dg.OpExecutionContext,
-    optimization_state: Dict[str, Any],
-) -> Tuple[bool, Dict[str, Any]]:
+        context: dg.OpExecutionContext,
+        optimization_state: Dict[str, Any]
+) -> Dict[str, Any]:
     """Check if optimization should continue."""
 
     max_rounds = optimization_state["max_optimization_rounds"]
@@ -228,8 +225,8 @@ def check_convergence_op(
             context.log.info("🏁 Stopping: Maximum rounds reached")
         elif best_score >= threshold:
             context.log.info("🎯 Stopping: Threshold achieved")
-
-    return should_continue, optimization_state
+    # NOTE: Temporarily not using should_continue
+    return optimization_state
 
 
 @dg.op
@@ -309,6 +306,6 @@ def optimization_result():
     optimized_state = run_genetic_optimization_op(strategy_state)
 
     # Check convergence status
-    should_continue, checked_state = check_convergence_op(optimized_state)
+    checked_state = check_convergence_op(optimized_state)
     # Finalize and return comprehensive results
     return finalize_optimization_op(checked_state)

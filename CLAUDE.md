@@ -107,3 +107,6 @@ The codebase uses a two-phase evaluation approach:
 2. **Heavyweight**: Full model training for final evaluation of promising candidates
 
 When working with the prompt optimization system, use custom evaluators that integrate with your specific data augmentation tasks rather than relying solely on LLM-based evaluation.
+
+## Documentation
+- Dagster: https://docs.dagster.io/
