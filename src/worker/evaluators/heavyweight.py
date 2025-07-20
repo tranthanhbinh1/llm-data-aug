@@ -95,7 +95,10 @@ class HeavyweightEvaluator(EvaluatorStrategy):
 
         except Exception as e:
             self.context.log.error(f"❌ Heavyweight evaluation failed: {e}")
-            return 0.0
+            # Stop immediately if there's an error
+            raise dg.DagsterExecutionStepExecutionError(
+                f"❌ Heavyweight evaluation failed: {e}"
+            )
 
     async def _generate_full_dataset(self, prompt: str, sentiment: Sentiment) -> str:
         """Generate full synthetic dataset using the candidate prompt."""

@@ -1,6 +1,7 @@
 import dagster as dg
 import asyncio
 from typing import Dict, Any
+from pydantic import field_validator, Field
 
 from src.enums import Sentiment
 from src.worker.evaluators import (
@@ -31,10 +32,9 @@ class OptimizationInitializationConfig(dg.Config):
     sentiment: Sentiment = Sentiment.NEUTRAL
     population_size: int = 5
     num_iterations: int = 5
-    max_optimization_rounds: int = 5
-    lightweight_evaluation_rounds: int = 2
+    max_optimization_rounds: int = Field(default=3, min_length=2)
+    lightweight_evaluation_rounds: int = 1
     trainer_score_weight: float = 0.7
-
 
 @dg.op
 def initialize_optimization_op(
@@ -56,7 +56,7 @@ def initialize_optimization_op(
             "population_size": config.population_size,
             "num_iterations": config.num_iterations,
             "num_elites": 1,
-            "threshold": 0.8,
+            "threshold": 0.7,
             "tournament_size": 3,
             "num_evaluation_samples": 2,
             "model": "gemini-2.0-flash",
@@ -70,45 +70,40 @@ def initialize_optimization_op(
     return optimization_state
 
 
-@dg.op
-def determine_evaluator_strategy_op(
+def determine_evaluator_strategy(
     context: dg.OpExecutionContext,
-    optimization_state: Dict[str, Any],
-) -> Dict[str, Any]:
+    current_round: int,
+    lightweight_evaluation_rounds: int,
+) -> str:
     """Determine which evaluator strategy to use for this round."""
 
-    current_round = optimization_state["round"] + 1  # Next round number
-    lightweight_rounds = optimization_state["lightweight_evaluation_rounds"]
-
     # Use heavyweight evaluation every N rounds
-    should_use_heavyweight = (current_round % (lightweight_rounds + 1)) == 0
+    should_use_heavyweight = (current_round % (lightweight_evaluation_rounds + 1)) == 0
 
     evaluator_type = "heavyweight" if should_use_heavyweight else "lightweight"
 
     context.log.info(f"🎯 Round {current_round}: Using {evaluator_type} evaluation")
 
-    optimization_state["current_evaluator_type"] = evaluator_type
-
-    return optimization_state
+    return evaluator_type
 
 
 @dg.op
-def run_genetic_optimization_op(
+def run_full_optimization_cycle_op(
     context: dg.OpExecutionContext,
     optimization_state: Dict[str, Any],
     llm: LLMResource,
     synthesizer: SynthesizerResource,
 ) -> Dict[str, Any]:
-    """Run one round of genetic algorithm optimization with pluggable evaluator."""
+    """Run the complete optimization cycle with multiple rounds and pluggable evaluators."""
 
-    async def _run_optimization():
+    async def _run_single_round(evaluator_type: str):
+        """Run a single optimization round with the specified evaluator."""
+        
         # Setup optimization config
         config_dict = optimization_state["optimization_config"]
         optimization_config = OptimizationConfig(**config_dict)
 
         # Create the appropriate evaluator
-        evaluator_type = optimization_state.get("current_evaluator_type", "lightweight")
-
         if evaluator_type == "heavyweight":
             evaluator = HeavyweightEvaluator(context, synthesizer)
         else:
@@ -155,78 +150,68 @@ def run_genetic_optimization_op(
 
         return result, evaluator_type
 
-    # Run async optimization
-    result, evaluator_type = asyncio.run(_run_optimization())
-
-    # Update state
-    optimization_state["round"] += 1
-
-    round_data = {
-        "round": optimization_state["round"],
-        "prompt": result.best_prompt,
-        "score": result.best_score,
-        "evaluator_type": evaluator_type,
-        "iterations": result.total_iterations,
-        "candidates_evaluated": result.total_candidates_evaluated,
-    }
-
-    optimization_state["history"].append(round_data)
-
-    # Track trainer scores separately
-    if evaluator_type == "heavyweight":
-        optimization_state["last_trainer_score"] = result.best_score
-        optimization_state["trainer_scores_history"].append(
-            {
-                "round": optimization_state["round"],
-                "trainer_score": result.best_score,
+    async def _run_optimization_cycle():
+        """Run the complete optimization cycle with multiple rounds."""
+        
+        max_rounds = optimization_state["max_optimization_rounds"]
+        lightweight_rounds = optimization_state["lightweight_evaluation_rounds"]
+        threshold = 0.8
+        
+        context.log.info(f"🚀 Starting optimization cycle: {max_rounds} max rounds")
+        
+        for round_num in range(1, max_rounds + 1):
+            # Determine evaluator strategy for this round
+            evaluator_type = determine_evaluator_strategy(
+                context, round_num, lightweight_rounds
+            )
+            
+            # Run optimization round
+            result, actual_evaluator_type = await _run_single_round(evaluator_type)
+            
+            # Update state
+            optimization_state["round"] = round_num
+            
+            round_data = {
+                "round": round_num,
+                "prompt": result.best_prompt,
+                "score": result.best_score,
+                "evaluator_type": actual_evaluator_type,
+                "iterations": result.total_iterations,
+                "candidates_evaluated": result.total_candidates_evaluated,
             }
-        )
+            
+            optimization_state["history"].append(round_data)
+            
+            # Track trainer scores separately
+            if actual_evaluator_type == "heavyweight":
+                optimization_state["last_trainer_score"] = result.best_score
+                optimization_state["trainer_scores_history"].append(
+                    {
+                        "round": round_num,
+                        "trainer_score": result.best_score,
+                    }
+                )
+            
+            # Update the current prompt if improved
+            if result.best_score > optimization_state["best_score"]:
+                optimization_state["current_prompt"] = result.best_prompt
+                optimization_state["best_score"] = result.best_score
+            
+            context.log.info(
+                f"✅ Round {round_num} ({actual_evaluator_type}) - Score: {result.best_score:.4f}"
+            )
+            
+            # Check convergence
+            if result.best_score >= threshold:
+                context.log.info(f"🎯 Convergence achieved! Score {result.best_score:.4f} >= {threshold}")
+                break
+                
+        context.log.info(f"🏁 Optimization cycle complete after {optimization_state['round']} rounds")
+        return optimization_state
 
-    # Update the current prompt if improved
-    if result.best_score > optimization_state["best_score"]:
-        optimization_state["current_prompt"] = result.best_prompt
-        optimization_state["best_score"] = result.best_score
+    # Run the full optimization cycle
+    return asyncio.run(_run_optimization_cycle())
 
-    context.log.info(
-        f"✅ Round {optimization_state['round']} ({evaluator_type}) - Score: {result.best_score:.4f}"
-    )
-
-    return optimization_state
-
-
-@dg.op
-def check_convergence_op(
-        context: dg.OpExecutionContext,
-        optimization_state: Dict[str, Any]
-) -> Dict[str, Any]:
-    """Check if optimization should continue."""
-
-    max_rounds = optimization_state["max_optimization_rounds"]
-    threshold = 0.8
-    current_round = optimization_state["round"]
-    best_score = optimization_state["best_score"]
-    last_trainer_score = optimization_state.get("last_trainer_score", 0.0)
-
-    # Check basic convergence criteria
-    should_continue = current_round < max_rounds and best_score < threshold
-
-    # Additional logging for trainer scores
-    trainer_count = len(optimization_state.get("trainer_scores_history", []))
-
-    context.log.info(f"📊 Convergence Check:")
-    context.log.info(f"   🔄 Round: {current_round}/{max_rounds}")
-    context.log.info(f"   📈 Best Score: {best_score:.4f}/{threshold}")
-    context.log.info(f"   🏋️ Last Trainer Score: {last_trainer_score:.4f}")
-    context.log.info(f"   🎯 Trainer Evaluations: {trainer_count}")
-    context.log.info(f"   ➡️ Continue: {should_continue}")
-
-    if not should_continue:
-        if current_round >= max_rounds:
-            context.log.info("🏁 Stopping: Maximum rounds reached")
-        elif best_score >= threshold:
-            context.log.info("🎯 Stopping: Threshold achieved")
-    # NOTE: Temporarily not using should_continue
-    return optimization_state
 
 
 @dg.op
@@ -291,21 +276,18 @@ def optimization_result():
         similarity score, trainer scores, convergence status, and complete history.
 
     Features:
+    - Multi-round optimization cycle
     - Pluggable evaluators (lightweight vs. heavyweight)
     - Trainer integration for heavyweight evaluation
     - Configurable evaluation intervals
+    - Automatic convergence detection
     - Comprehensive logging and tracking
     """
     # Initialize optimization state with configuration
     initial_state = initialize_optimization_op()
 
-    # Determine which evaluator strategy to use for this round
-    strategy_state = determine_evaluator_strategy_op(initial_state)
+    # Run the complete optimization cycle with multiple rounds
+    optimized_state = run_full_optimization_cycle_op(initial_state)
 
-    # Run one round of genetic optimization with the chose evaluator
-    optimized_state = run_genetic_optimization_op(strategy_state)
-
-    # Check convergence status
-    checked_state = check_convergence_op(optimized_state)
     # Finalize and return comprehensive results
-    return finalize_optimization_op(checked_state)
+    return finalize_optimization_op(optimized_state)
